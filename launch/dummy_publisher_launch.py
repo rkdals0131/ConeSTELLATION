@@ -48,6 +48,14 @@ def launch_setup(context, *args, **kwargs):
     except:
         pass
     
+    # Check if publish_map_to_odom was provided
+    try:
+        publish_map_to_odom_value = LaunchConfiguration('publish_map_to_odom').perform(context)
+        if publish_map_to_odom_value:
+            param_overrides['publish_map_to_odom'] = publish_map_to_odom_value.lower() == 'true'
+    except:
+        pass
+    
     # Add overrides if any were provided
     if param_overrides:
         params.append(param_overrides)
@@ -82,9 +90,16 @@ def generate_launch_description():
         description='ROI visualization type: sector or rectangle - overrides config file'
     )
     
+    publish_map_to_odom_arg = DeclareLaunchArgument(
+        'publish_map_to_odom',
+        default_value='',
+        description='Publish map->odom transform (true for standalone, false with SLAM)'
+    )
+    
     return LaunchDescription([
         scenario_arg,
         vehicle_speed_arg,
         roi_type_arg,
+        publish_map_to_odom_arg,
         OpaqueFunction(function=launch_setup)
     ])

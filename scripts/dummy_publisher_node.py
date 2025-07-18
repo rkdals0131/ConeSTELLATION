@@ -57,19 +57,19 @@ class VisualizationAdapter:
         marker_array.markers.append(clear_marker)
         
         # Add cone markers
-        for idx, (cone_id, cone_data) in enumerate(cones.items()):
+        for idx, cone in enumerate(cones):
             marker = Marker()
             marker.header.frame_id = frame_id
             if timestamp:
                 marker.header.stamp = timestamp.to_msg()
             marker.ns = namespace
-            marker.id = cone_id
+            marker.id = cone.get('id', idx)
             marker.type = Marker.CYLINDER
             marker.action = Marker.ADD
             
             # Position
-            marker.pose.position.x = float(cone_data['pos'][0])
-            marker.pose.position.y = float(cone_data['pos'][1])
+            marker.pose.position.x = float(cone['pos'][0])
+            marker.pose.position.y = float(cone['pos'][1])
             marker.pose.position.z = -0.15
             marker.pose.orientation.w = 1.0
             
@@ -79,7 +79,7 @@ class VisualizationAdapter:
             marker.scale.z = 0.3
             
             # Color
-            cone_type = cone_data.get('type', 'unknown').lower()
+            cone_type = cone.get('type', 'unknown').lower()
             if ground_truth:
                 marker.color.r = 0.5
                 marker.color.g = 0.5
@@ -247,7 +247,7 @@ class VisualizationAdapter:
                 marker.header.stamp = timestamp.to_msg()
             marker.ns = namespace
             marker.id = track_id
-            marker.type = Marker.CYLINDER
+            marker.type = Marker.SPHERE  # Semi-transparent sphere for detected cones
             marker.action = Marker.ADD
             
             # Position
@@ -279,7 +279,7 @@ class VisualizationAdapter:
                 marker.color.r = 0.0
                 marker.color.g = 1.0
                 marker.color.b = 0.0
-            marker.color.a = 1.0
+            marker.color.a = 0.4  # Semi-transparent
             
             marker_array.markers.append(marker)
         
@@ -298,6 +298,7 @@ class DummyPublisher(Node):
         self.declare_parameter('operation_mode', 'simulation')
         self.declare_parameter('simulation.use_gps', True)
         self.declare_parameter('simulation.gps_topic', '/gps/odom')
+        self.declare_parameter('publish_map_to_odom', True)  # For standalone testing without SLAM
         
         # Declare parameters with hierarchical structure matching YAML
         self.declare_parameter('scenario.id', 1)
@@ -345,6 +346,7 @@ class DummyPublisher(Node):
         
         # Get operation mode
         self.operation_mode = self.get_parameter('operation_mode').value
+        self.publish_map_to_odom = self.get_parameter('publish_map_to_odom').value
         
         # Get parameters
         self.scenario = self.get_parameter('scenario.id').value
@@ -497,6 +499,12 @@ class DummyPublisher(Node):
         self.get_logger().info(f"[DUMMY_MODE] Running in mode: {self.operation_mode}")
         if self.operation_mode == 'simulation' and self.get_parameter('simulation.use_gps').value:
             self.get_logger().info("[DUMMY_GPS] GPS simulation enabled")
+        
+        # Debug logging
+        self.get_logger().info(f"Publishing rates - Cones: {self.publish_rate}Hz, IMU: {self.imu_rate}Hz, Odom: {self.odom_rate}Hz")
+        self.get_logger().info(f"Initial vehicle state - X: {self.vehicle_state.position[0]:.2f}, Y: {self.vehicle_state.position[1]:.2f}, Theta: {self.vehicle_state.orientation[2]:.2f}")
+        self.get_logger().info(f"publish_map_to_odom: {self.publish_map_to_odom}")
+        self.get_logger().info("Timer callbacks created successfully")
     
     
     def update_motion(self):
@@ -540,6 +548,13 @@ class DummyPublisher(Node):
         now = self.get_clock().now().to_msg()
         transforms = []
         
+        # Debug logging every 100 calls (10Hz)
+        if not hasattr(self, '_transform_count'):
+            self._transform_count = 0
+        self._transform_count += 1
+        if self._transform_count % 100 == 0:
+            self.get_logger().info(f"Publishing transforms (call #{self._transform_count})")
+        
         # Map -> Ground_truth_odom (identity - ground truth has no drift)
         map_to_gt_odom = TransformStamped()
         map_to_gt_odom.header.stamp = now
@@ -568,7 +583,20 @@ class DummyPublisher(Node):
         gt_odom_to_gt_base.transform.rotation.w = q_gt[3]
         transforms.append(gt_odom_to_gt_base)
         
-        # Do NOT publish map->odom transform - SLAM node handles this
+        # Publish map->odom ONLY if configured (for standalone testing without SLAM)
+        # When SLAM is running, set publish_map_to_odom=false to avoid TF conflicts
+        if self.publish_map_to_odom:
+            map_to_odom = TransformStamped()
+            map_to_odom.header.stamp = now
+            map_to_odom.header.frame_id = "map"
+            map_to_odom.child_frame_id = "odom"
+            # Identity transform - no drift correction
+            map_to_odom.transform.rotation.w = 1.0
+            transforms.append(map_to_odom)
+            
+            # Log warning once
+            if self._transform_count == 1:
+                self.get_logger().warn("Publishing map->odom transform. Disable this when running SLAM!")
         
         # Odom -> Base_link transform (only if odom simulation is enabled)
         if self.odom_sim_enabled:
@@ -576,6 +604,10 @@ class DummyPublisher(Node):
             noisy_x = self.sensor_sim.odom_sim.odom_x
             noisy_y = self.sensor_sim.odom_sim.odom_y
             noisy_theta = self.sensor_sim.odom_sim.odom_theta
+            
+            # Debug logging first time and every 1000 calls
+            if self._transform_count == 1 or self._transform_count % 1000 == 0:
+                self.get_logger().info(f"Odom->base_link transform - X: {noisy_x:.2f}, Y: {noisy_y:.2f}, Theta: {noisy_theta:.2f}")
             
             # Odom -> Base_link transform (noisy)
             odom_to_base = TransformStamped()
@@ -618,9 +650,18 @@ class DummyPublisher(Node):
     
     def publish_ground_truth_cones(self):
         """Publish ground truth cone positions for visualization"""
+        # Convert dict to list format expected by publish_cone_array
+        cones_list = []
+        for cone_id, cone_data in self.ground_truth_cones.items():
+            cones_list.append({
+                'pos': cone_data['pos'],
+                'type': cone_data['type'],
+                'id': cone_id
+            })
+        
         publish_cone_array(
             self.gt_cones_pub,
-            self.ground_truth_cones,
+            cones_list,
             namespace="ground_truth_cones",
             frame_id="map",
             with_text=False,  # GT cone에는 텍스트 제거

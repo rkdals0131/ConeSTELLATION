@@ -2,6 +2,8 @@
 
 dummy_publisher:
   ros__parameters:
+    # TF 발행 설정
+    publish_map_to_odom: true  # SLAM 없이 단독 실행시 true, SLAM과 함께 실행시 false
     # 시나리오 설정
     scenario:
       id: 2                    # 1: 직선 트랙 (AEB 테스트용), 2: Formula Student 트랙 (타원형)
