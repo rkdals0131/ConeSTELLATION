@@ -1,0 +1,72 @@
+# ConeSTELLATION SLAM Configuration
+cone_slam:
+  ros__parameters:
+    # Preprocessing parameters
+    preprocessing:
+      # Outlier rejection
+      max_cone_distance: 20.0          # Maximum distance to consider cone (meters)
+      min_cone_confidence: 0.5         # Minimum detection confidence [0,1]
+      
+      # Pattern detection
+      enable_pattern_detection: true   # Enable geometric pattern detection
+      line_fitting_threshold: 0.2      # Max distance from line (meters)
+      min_cones_for_line: 3           # Minimum cones to fit line
+      
+      # Tracking
+      association_threshold: 1.0       # Max distance for same cone (meters)
+      max_tracking_frames: 10         # Track cones for N frames
+
+    # Mapping parameters
+    mapping:
+      # ISAM2 optimization
+      isam2_relinearize_threshold: 0.01
+      isam2_relinearize_skip: 1
+      
+      # Factor noise models (standard deviations)
+      odometry_noise: 0.1                    # Odometry factor noise
+      cone_observation_noise: 0.5            # Cone observation noise
+      inter_landmark_distance_noise: 0.1     # Inter-landmark distance factor (KEY INNOVATION)
+      pattern_factor_noise: 0.05             # Pattern-based factor noise
+      
+      # Inter-landmark factor creation (KEY INNOVATION)
+      enable_inter_landmark_factors: true    # Enable novel inter-landmark constraints
+      min_covisibility_count: 2              # Min times cones seen together
+      max_landmark_distance: 10.0            # Max distance for inter-landmark factor
+      
+      # Optimization triggers
+      optimize_every_n_frames: 10            # Run optimization every N keyframes
+      optimize_on_loop_closure: true         # Force optimization on loop closure
+
+    # Keyframe selection
+    keyframe:
+      translation_threshold: 1.0       # Minimum translation for new keyframe (meters)
+      rotation_threshold: 0.2          # Minimum rotation for new keyframe (radians)
+      time_threshold: 1.0              # Maximum time between keyframes (seconds)
+      
+    # Data association
+    association:
+      max_association_distance: 2.0    # Maximum distance for data association
+      use_color_constraint: true       # Use cone color in association
+      color_mismatch_penalty: 10.0     # Penalty for color mismatch
+      
+    # Tentative landmark parameters (delayed addition)
+    tentative_landmark:
+      min_observations: 3              # Minimum observations before promotion
+      min_time_span: 0.5              # Minimum time span in seconds
+      max_position_variance: 0.5       # Maximum position variance (m^2)
+      min_color_confidence: 0.6        # Minimum color voting confidence
+      max_observations: 20             # Maximum observations to store
+      
+    # Loop closure detection
+    loop_closure:
+      enable: true                     # Enable loop closure detection
+      min_keyframes_apart: 20          # Minimum keyframes between loop candidates
+      max_distance_for_loop: 5.0       # Maximum distance to consider loop closure
+      min_matched_cones: 5             # Minimum matched cones for loop closure
+
+    # Visualization
+    visualization:
+      publish_rate: 10.0               # Hz
+      show_inter_landmark_factors: true # Visualize inter-landmark constraints
+      show_pattern_factors: true       # Visualize pattern-based constraints
+      factor_line_width: 0.02          # Width of factor visualization lines

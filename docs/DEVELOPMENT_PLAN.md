@@ -241,6 +241,48 @@ struct ConeMap {
 3. **시뮬레이션 테스트**: 가상 콘 데이터로 테스트
 4. **실제 데이터 테스트**: rosbag 활용
 
+### 9. 현재 상태 및 향후 계획 (2025-07-19 업데이트)
+
+#### 완료된 작업
+- ✅ 기본 factor graph SLAM 구현
+- ✅ Inter-landmark factors (ConeDistanceFactor, ConeLineFactor)
+- ✅ Factor graph 시각화
+- ✅ 시뮬레이션 환경 통합
+- ✅ ROS2 토픽 구조 문서화
+
+#### 현재 이슈
+- ⚠️ Odometry와 Mapping이 분리되지 않아 실시간 성능 제한
+- ⚠️ Sub-mapping 시스템 없음
+- ⚠️ 비동기 처리 미구현
+
+#### 우선순위 개발 계획
+1. **Phase 1: ConeOdometryEstimation 모듈 추가** (1주)
+   - Frame-to-frame cone matching
+   - Fast pose tracking at sensor rate
+   - IMU prediction integration ready
+
+2. **Phase 2: ConeSubMapping 모듈 추가** (1주)
+   - Keyframe-based local mapping
+   - Submap generation and management
+   - Local optimization
+
+3. **Phase 3: Async Wrapper 구현** (1주)
+   - AsyncConeOdometry
+   - AsyncConeSubMapping
+   - Thread-safe queues
+
+4. **Phase 4: Incremental Optimization** (1주)
+   - ISAM2 proper usage
+   - Factor marginalization
+   - Memory management
+
+5. **Phase 5: Loop Closure** (2주)
+   - Cone pattern matching
+   - Place recognition
+   - Graph optimization
+
 ## 결론
 
 ConeSTELLATION은 GLIM의 검증된 아키텍처를 콘 기반 SLAM에 맞게 적용하여, 모듈성, 확장성, 성능을 모두 갖춘 시스템으로 개발할 예정입니다. GLIM의 핵심 설계 원칙을 따르면서도 콘 기반 SLAM의 특수성을 고려한 최적화를 진행할 것입니다.
+
+**핵심 교훈**: GLIM의 성공 요인은 Odometry와 Mapping의 분리를 통한 multi-rate 처리입니다. ConeSTELLATION도 이를 적용하여 실시간 성능을 확보해야 합니다.

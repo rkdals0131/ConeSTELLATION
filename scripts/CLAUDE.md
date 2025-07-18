@@ -32,8 +32,16 @@ This directory contains simulation scripts adapted from cc_slam_sym for testing 
 ✅ Configurable through YAML files
 ✅ Works independently of SLAM backend choice
 
+## Current Issues
+✅ Topic names aligned: both dummy_publisher and SLAM use `/fused_sorted_cones_ukf_sim`
+
 ## Usage
 The simulator provides ground truth data alongside noisy measurements, making it ideal for:
 - Testing SLAM algorithm performance
 - Debugging data association issues  
 - Evaluating different backend implementations
+
+Run with:
+```bash
+ros2 run cone_stellation dummy_publisher_node.py
+```
