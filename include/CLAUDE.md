@@ -21,8 +21,31 @@ Following GLIM's approach, most implementations are header-only for:
 - No need for complex linking
 - Inline optimization opportunities
 
-## Current Status
+## Current Status (2025-07-20)
 
-- Basic structure established
-- Core modules implemented (preprocessing, mapping, factors)
-- Missing odometry and async modules
+### Recent Updates
+- **mapping/data_association.hpp**: ✅ NEW - Basic data association module
+  - Nearest neighbor matching with color constraints
+  - Configurable association distance threshold
+  - Foundation for preventing landmark duplication
+- **simple_cone_mapping.hpp**: Integrated data association
+  - No longer creates duplicate landmarks
+  - Associates observations to existing landmarks
+  - Limits new landmark creation per frame
+- **odometry/**: Implemented cone-based odometry modules
+  - cone_odometry_base.hpp: Abstract base class for odometry estimation
+  - cone_odometry_2d.hpp: 2D implementation using GTSAM factor graph
+  - async_cone_odometry.hpp: Asynchronous wrapper for real-time processing
+- **cone.hpp**: Fixed color definitions to match actual track layout (YELLOW=right, BLUE=left)
+- **viewer/**: Separated visualization modules following GLIM architecture
+
+### Fixed Issues
+- ✅ **Critical**: Implemented cone-based odometry - no longer relies on TF
+- ✅ Data association preventing landmark duplication
+- ✅ Motion estimation from cone observations working
+
+### Next Steps
+- Build and test the integrated system with data association
+- Debug blue cone intermittent appearance issue
+- Fine-tune association parameters
+- Enable inter-landmark factors

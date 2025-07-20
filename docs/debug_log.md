@@ -216,3 +216,220 @@
   - `tentative_landmark.hpp`: Core observation buffering logic
   - Modified `ConeMapping` to use two-stage association
   - Configure via `slam_config.yaml` tentative_landmark section
+
+## 2025-07-19 18:00:00 - Topic Management and Consistency Fix
+- **Issue**: Missing topics reported by user - /slam/factor_graph, /slam/keyframes, /slam/path were subscribed in RViz but not published
+- **Problem**: 
+  1. Factor graph published to wrong topic name (/slam/inter_landmark_factors)
+  2. Keyframe visualization not implemented
+  3. Path accumulation and publishing not implemented
+  4. Topic documentation inconsistent with implementation
+- **Solution**: 
+  - Renamed factor_pub_ topic from "/slam/inter_landmark_factors" to "/slam/factor_graph"
+  - Added keyframe_pub_ publisher for "/slam/keyframes"
+  - Changed path topic from "/slam/trajectory" to "/slam/path"
+  - Implemented slam_path_ accumulation in cone_callback()
+  - Created create_keyframe_markers() function with cyan arrows for poses
+  - Updated topic_structure.md documentation to match implementation
+- **Result**: 
+  - All expected topics now published correctly
+  - RViz can visualize factor graph, keyframes, and path
+  - Documentation matches actual implementation
+- **Next Steps**:
+  - Implement odometry/mapping separation for production
+  - Add IMU/GPS integration to development plan
+
+## 2025-07-19 15:00 - Color Mapping and Visualization Issues
+
+### Problem
+1. Only blue cones showing on the right side when yellow cones should be there
+2. No data association or factor graph generation happening
+
+### Root Causes Found
+1. **Color Definition Mismatch**: 
+   - cone_definitions.py places blue cones at Y=+2.5 (left) and yellow at Y=-2.5 (right)
+   - cone.hpp comments say YELLOW=left, BLUE=right (opposite of actual placement)
+   
+2. **SimpleConeMapping Visualization Bug**:
+   - SimpleConeMapping doesn't track cone colors (only stores positions)
+   - Visualization hardcodes all landmarks to blue color
+   - This explains why only blue cones appear
+
+3. **Data Association Color Filtering**:
+   - ConeMapping only associates observations with landmarks of same color
+   - If color definitions are mixed up, associations will fail
+
+### Solution
+1. Fix color definitions to match actual track layout
+2. Update SimpleConeMapping to track and visualize colors correctly
+3. Verify data association works with corrected colors
+
+### Result
+Issue identified but not yet fixed. Need to implement solutions above.
+
+
+
+## 2025-07-19 15:30 - Fixed Color Issues
+
+### Actions Taken
+1. Fixed color comments in cone.hpp to match actual track layout:
+   - YELLOW = Right side (Y < 0)
+   - BLUE = Left side (Y > 0)
+
+2. Updated SimpleConeMapping to track colors:
+   - Added SimpleLandmark struct with position and color
+   - Updated visualization to use proper colors
+
+3. Added case-insensitive color parsing in ros_utils.hpp
+
+4. Added debug logging to track data association
+
+### Next Steps
+- Test to see if colors display correctly
+- Check if data association works properly
+- Monitor logs to see if landmarks are being created
+
+
+## 2025-07-19 16:00 - CLAUDE.md Update and Test File Cleanup
+
+### Problem
+- Not updating CLAUDE.md files after modifications (violating guidelines)
+- Created unnecessary test files
+- Visualization code mixed with utility functions
+
+### Actions Taken
+1. Updated include/CLAUDE.md with recent changes
+2. Updated src/CLAUDE.md with recent changes
+3. Removed unnecessary test files:
+   - minimal_test_slam.hpp
+   - test_minimal_slam.py
+   - test_minimal_slam_launch.py
+   - run_minimal_tests.sh
+   - DEBUG_INSTRUCTIONS.md
+
+### Proposed Solution
+- Separate visualization into viewer module following GLIM architecture
+- Create dedicated visualizer classes for different visualization types
+
+### Result
+CLAUDE.md files updated, test files cleaned up. Awaiting decision on visualization separation.
+
+
+## 2025-07-19 17:00 - Visualization Separated and Core Issue Analysis
+
+### Actions Taken
+1. Created viewer module structure following GLIM architecture
+2. Moved visualization code from ros_utils.hpp and cone_slam_node.cpp to slam_visualizer.hpp
+3. Updated cone_slam_node.cpp to use SLAMVisualizer
+
+### Root Cause Analysis (GLIM vs ConeSTELLATION)
+
+#### GLIM Data Flow:
+- Sensors → Preprocessing → Odometry → SubMapping → GlobalMapping
+- Each module has clear interfaces and async wrappers
+- Data association handled in mapping layer
+
+#### ConeSTELLATION Current Flow:
+- TrackedConeArray → from_ros_msg → ConePreprocessor → ConeMapping
+- Missing proper odometry estimation
+- Data association happening too early (in mapping)
+
+### Key Differences Found:
+1. **Odometry Module Missing**: ConeSTELLATION has no odometry estimation
+   - GLIM: Separate odometry module for pose estimation
+   - ConeSTELLATION: Directly using TF from dummy publisher
+
+2. **Data Association Timing**:
+   - GLIM: Associates after pose estimation
+   - ConeSTELLATION: Tries to associate before having good pose
+
+3. **Frame-based vs Direct Processing**:
+   - GLIM: EstimationFrame carries pose + observations
+   - ConeSTELLATION: Processing observations without proper frame context
+
+### Core Issue:
+The system is trying to do SLAM without proper odometry estimation. It's relying on TF from dummy publisher instead of estimating motion from observations.
+
+### Result
+Visualization separated successfully. Core architectural issue identified - missing odometry module.
+
+
+## 2025-07-20 16:30 - Segfault in ISAM2 Update
+### Problem
+Cone SLAM crashes during ISAM2 update with SimpleConeMapping
+
+### Analysis
+- gtsam::Point2 constructor was being called with Eigen::Vector2d directly
+- GTSAM types don't have implicit constructors from Eigen types
+
+### Solution
+- Fixed all gtsam::Point2 construction to use explicit x(), y() accessors
+- Applied to both SimpleConeMapping and ConeMapping
+- Fixed in ConeObservationFactor, inter_landmark_factors, etc.
+
+### Result
+Build successful, but still crashes at same location - investigating further
+
+
+## 2025-07-20 16:35 - Data Association Missing
+### Problem
+- Yellow cones appear in correct positions but duplicate (no data association)
+- Blue cones appear intermittently
+- No data association between observations
+
+### Analysis
+- SimpleConeMapping creates new landmark for every observation
+- No matching or association logic implemented
+- Color classification might have issues for blue cones
+
+### Solution
+Need to implement proper data association before optimization
+
+### Result
+Pending implementation
+
+
+## 2025-07-20 16:40 - Development Order Critical Analysis
+### Problem
+User proposed development order that separates mapping from data association
+
+### Analysis
+Based on GLIM architecture review:
+- Data association is integral to mapping, not a separate phase
+- Graph optimization requires proper associations to work
+- "Mapping without data association" is just point accumulation, not SLAM
+- GLIM shows all components run concurrently, not sequentially
+
+### Correct Development Order
+1. Fix preprocessing & color classification (current blue cone issue)
+2. Implement basic data association (nearest-neighbor with color constraints)
+3. Enable mapping with optimization (they're coupled)
+4. Add advanced features (inter-landmark factors, loop closure)
+
+### Key Insight
+GLIM's modularity is about runtime flexibility, not sequential development. All components must work together from the start.
+
+### Result
+Provided critical analysis and corrected development plan
+
+
+## 2025-07-20 17:00 - Data Association Implementation
+### Problem
+No data association causing landmark duplication
+
+### Solution
+- Created data_association.hpp with simple nearest-neighbor matching
+- Integrated into SimpleConeMapping
+- Added color constraints and distance gating
+- Limited new landmark creation per frame
+
+### Implementation Details
+- DataAssociation class with configurable parameters
+- Converts SimpleLandmark to ConeLandmark for association
+- Processes all observations, creates associations map
+- Existing landmarks get observation factors added
+- New landmarks created only when no association found
+
+### Result
+Build successful - ready for testing with proper data association
+

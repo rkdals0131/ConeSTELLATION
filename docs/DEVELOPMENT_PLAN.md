@@ -276,13 +276,222 @@ struct ConeMap {
    - Factor marginalization
    - Memory management
 
-5. **Phase 5: Loop Closure** (2주)
-   - Cone pattern matching
-   - Place recognition
-   - Graph optimization
+5. **Phase 5: Advanced Optimization with Fixed-Lag Smoother** (2주)
+   - **Fixed-Lag Smoother Implementation** (GLIM의 IncrementalFixedLagSmootherExtWithFallback 참조)
+     - Configurable lag window (10-20초 or 50-100 keyframes)
+     - Automatic marginalization of old states
+     - Information matrix preservation
+     - Fallback mechanism for numerical stability
+   - **Sliding Window Optimization**
+     - Bounded computational complexity O(k) where k = window size
+     - Smart marginalization strategy preserving loop constraints
+     - Memory-efficient landmark management
+   - **Robust Kernels** (GLIM 참조)
+     - Huber/Tukey kernels for outlier rejection
+     - Adaptive kernel parameter tuning
+     - Cone-specific robust factors
+
+6. **Phase 6: Loop Closure Detection and Correction** (3주)
+   - **Cone Constellation Descriptor** 
+     - Rotation-invariant cone patterns
+     - Color-aware geometric descriptors
+     - Efficient KD-tree indexing
+   - **Loop Candidate Detection** (GLIM의 parallel evaluation 참조)
+     - Travel distance-based search
+     - Multi-threaded candidate evaluation
+     - Probabilistic validation
+   - **Loop Closure Constraints**
+     - Robust pose graph optimization
+     - Chi-squared validation
+     - Gradual loop factor integration
+   - **Map Correction Broadcasting**
+     - Smooth trajectory deformation
+     - Landmark position updates
+     - Covariance propagation
+
+### 10. GLIM 고급 기능 통합 계획 (2025-07-19 추가)
+
+#### Phase 7: Enhanced Color Voting and Track ID Management (낮은 우선순위)
+- **Advanced Color Voting** (현재 TentativeLandmark 확장)
+  - Temporal consistency weighting
+  - Distance-based confidence scaling
+  - Multi-hypothesis color tracking
+  - Bayesian color classification
+- **Track ID Hysteresis Enhancement**
+  - Hungarian algorithm for optimal assignment
+  - Velocity-based prediction
+  - Occlusion handling with ghost tracks
+- **Pattern-based Color Validation**
+  - Track boundary color constraints
+  - Spatial color consistency checks
+
+### 11. Advanced GLIM Features
+
+#### Advanced Features from GLIM
+
+1. **Multi-threaded Architecture** (Phase 3 확장)
+   - TBB (Threading Building Blocks) 통합
+   - ConcurrentVector/Queue for lock-free data passing
+   - Parallel factor evaluation
+   - Thread pool management
+
+2. **Memory Management** (Phase 4 확장)
+   - LRU cache for cone descriptors
+   - DataStorePolicy for configurable buffers
+   - Smart pointer throughout
+   - Memory-bounded operations
+
+3. **Advanced Registration** (새로운 모듈)
+   - Cone-specific registration metrics
+   - Multi-scale matching (individual → constellation)
+   - GPU acceleration option
+   - Adaptive correspondence thresholds
+
+4. **Modular Callback System** (전체 아키텍처)
+   - Frame insertion callbacks
+   - Marginalization callbacks
+   - Optimization callbacks
+   - Performance monitoring hooks
+
+5. **Configuration Management** (Phase 1 확장)
+   - JSON-based hierarchical config
+   - Runtime parameter updates
+   - Profile-based configurations
+   - Track-specific profiles
+
+6. **Robust Optimization** (Phase 5 통합)
+   - Multiple robust kernels
+   - Graduated non-convexity
+   - Adaptive parameter tuning
+   - Fallback mechanisms
+
+7. **Serialization and Recovery** (새로운 기능)
+   - Full graph save/load
+   - Session recovery
+   - Cone map sharing
+   - Multi-format export
+
+### 12. IMU/GPS 통합 계획
+
+#### Phase 8: IMU Integration (2주)
+1. **IMU Preintegration Module**
+   - GTSAM의 IMU preintegration 활용
+   - Between-factor로 포즈 간 제약 추가
+   - Bias estimation 포함
+   
+2. **Motion Model Enhancement**
+   - IMU 기반 motion prediction
+   - Cone association 개선
+   - Outlier rejection 강화
+
+3. **Factor Graph Extension**
+   ```cpp
+   // IMU preintegration factor
+   graph.add(ImuFactor(x_i, v_i, x_j, v_j, b_i, preintegrated_imu));
+   
+   // Velocity and bias priors
+   graph.add(PriorFactor<Vector3>(v_0, zero_velocity, velocity_noise));
+   graph.add(PriorFactor<ImuBias>(b_0, zero_bias, bias_noise));
+   ```
+
+4. **Configuration**
+   ```yaml
+   imu:
+     accelerometer_noise_density: 0.01
+     gyroscope_noise_density: 0.001
+     accelerometer_bias_random_walk: 0.0001
+     gyroscope_bias_random_walk: 0.00001
+     gravity_magnitude: 9.81
+   ```
+
+#### Phase 9: GPS Integration (1주)
+1. **GPS Factor Implementation**
+   - Global position constraints
+   - UTM/Local coordinate transformation
+   - Covariance scaling based on satellite count
+
+2. **Loose Coupling Approach**
+   ```cpp
+   // GPS position factor (only when good fix)
+   if (gps_msg.status.status >= NavSatStatus::STATUS_FIX) {
+     graph.add(GPSFactor(x_i, gps_position, gps_noise));
+   }
+   ```
+
+3. **Coordinate Frame Management**
+   - ENU local frame initialization
+   - GPS to map frame alignment
+   - Datum management
+
+#### Phase 10: Tight IMU/GPS/Vision Coupling (3주)
+1. **Extended State Vector**
+   ```cpp
+   struct State {
+     Pose3 T_world_imu;      // IMU pose in world
+     Vector3 velocity;        // Linear velocity
+     ImuBias imu_bias;       // Accelerometer and gyro biases
+     double gps_time_offset;  // GPS-IMU time sync
+   };
+   ```
+
+2. **Multi-rate Sensor Fusion**
+   - IMU: 100-400 Hz
+   - Cones: 10-20 Hz  
+   - GPS: 1-10 Hz
+   - Synchronized processing pipeline
+
+3. **Initialization Strategy**
+   - Static initialization for IMU biases
+   - GPS-based global alignment
+   - Cone-based scale recovery
+
+4. **Failure Detection and Recovery**
+   - Chi-squared test for outliers
+   - Sensor health monitoring
+   - Graceful degradation modes
+
+#### Implementation Priorities
+1. **먼저 IMU 통합** - Motion prediction 개선에 즉각적 도움
+2. **다음 GPS 통합** - Global consistency를 위해
+3. **마지막 Tight coupling** - 모든 센서가 안정화된 후
+
+#### Testing Strategy
+1. **Simulation Testing**
+   - Add IMU/GPS to dummy_publisher
+   - Inject sensor noise and biases
+   - Test failure scenarios
+
+2. **Real Data Testing**
+   - Record rosbags with all sensors
+   - Compare against ground truth
+   - Evaluate improvement metrics
+
+## 현재 구현 상태 (2025-07-19)
+
+### 이미 구현된 기능 ✅
+1. **Basic Color Voting** - TentativeLandmark에 구현 (단순 투표 방식)
+2. **Tentative Landmark System** - 관측 버퍼링, 승급 기준, Track ID 관리
+3. **Factor Graph SLAM** - ISAM2, 커스텀 팩터들 (ConeObservationFactor, Inter-landmark factors)
+4. **Basic Visualization** - 랜드마크, 팩터 그래프, 키프레임, 경로
+
+### 아직 구현 안 된 주요 기능 ❌
+1. **Fixed-Lag Smoother** - 메모리 제한 O(k), 일정한 계산 시간
+2. **Loop Closure Detection** - 콘 constellation 기반
+3. **Multi-threading** - 비동기 처리 아키텍처
+4. **Robust Optimization** - Huber/Tukey 커널
+5. **Odometry/Mapping Separation** - 실시간 성능 확보
+
+### 성능 목표
+| 지표 | 현재 | 목표 | 
+|------|------|------|
+| 최적화 시간 | ~100ms | <50ms |
+| 메모리 사용량 | Unbounded | <1GB |
+| Loop closure 성공률 | 0% | >90% |
+| 색상 정확도 | ~85% | >95% |
+| 처리 속도 | 10Hz | 20Hz+ |
 
 ## 결론
 
-ConeSTELLATION은 GLIM의 검증된 아키텍처를 콘 기반 SLAM에 맞게 적용하여, 모듈성, 확장성, 성능을 모두 갖춘 시스템으로 개발할 예정입니다. GLIM의 핵심 설계 원칙을 따르면서도 콘 기반 SLAM의 특수성을 고려한 최적화를 진행할 것입니다.
+ConeSTELLATION은 GLIM의 검증된 아키텍처를 콘 기반 SLAM에 맞게 적용하여, 모듈성, 확장성, 성능을 모두 갖춘 시스템으로 개발할 예정입니다. 특히 **Inter-landmark factors**라는 핵심 혁신을 통해 희소한 콘 환경에서도 강건한 SLAM을 구현합니다.
 
 **핵심 교훈**: GLIM의 성공 요인은 Odometry와 Mapping의 분리를 통한 multi-rate 처리입니다. ConeSTELLATION도 이를 적용하여 실시간 성능을 확보해야 합니다.

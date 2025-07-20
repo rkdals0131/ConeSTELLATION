@@ -7,6 +7,8 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_eigen/tf2_eigen.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <algorithm>
+#include <cctype>
 
 #include "cone_stellation/common/cone.hpp"
 #include "custom_interface/msg/tracked_cone_array.hpp"
@@ -31,17 +33,22 @@ inline std::vector<ConeObservation> from_ros_msg(const custom_interface::msg::Tr
     obs.position = Eigen::Vector2d(cone_msg.position.x, cone_msg.position.y);
     obs.confidence = 1.0; // Default confidence since not in message
     
-    // Parse color from string
-    if (cone_msg.color.find("Yellow") != std::string::npos) {
+    // Parse color from string (case-insensitive)
+    std::string color_lower = cone_msg.color;
+    std::transform(color_lower.begin(), color_lower.end(), color_lower.begin(), ::tolower);
+    
+    if (color_lower.find("yellow") != std::string::npos) {
       obs.color = ConeColor::YELLOW;
-    } else if (cone_msg.color.find("Blue") != std::string::npos) {
+    } else if (color_lower.find("blue") != std::string::npos) {
       obs.color = ConeColor::BLUE;
-    } else if (cone_msg.color.find("Red") != std::string::npos) {
+    } else if (color_lower.find("red") != std::string::npos) {
       obs.color = ConeColor::RED;
-    } else if (cone_msg.color.find("Orange") != std::string::npos) {
+    } else if (color_lower.find("orange") != std::string::npos) {
       obs.color = ConeColor::ORANGE;
     } else {
       obs.color = ConeColor::UNKNOWN;
+      RCLCPP_DEBUG(rclcpp::get_logger("ros_utils"), 
+                   "Unknown color string: '%s'", cone_msg.color.c_str());
     }
     
     // Simple covariance model based on distance
@@ -264,6 +271,89 @@ inline visualization_msgs::msg::MarkerArray create_factor_markers(
         // Skip if values not available
       }
     }
+  }
+  
+  return markers;
+}
+
+/**
+ * @brief Create keyframe visualization markers
+ */
+inline visualization_msgs::msg::MarkerArray create_keyframe_markers(
+    const std::unordered_map<int, gtsam::Pose2>& keyframe_poses,
+    const std::string& frame_id = "map",
+    const rclcpp::Time& timestamp = rclcpp::Time()) {
+  
+  visualization_msgs::msg::MarkerArray markers;
+  
+  // Delete all marker
+  visualization_msgs::msg::Marker delete_marker;
+  delete_marker.header.frame_id = frame_id;
+  delete_marker.header.stamp = timestamp;
+  delete_marker.ns = "keyframes";
+  delete_marker.action = visualization_msgs::msg::Marker::DELETEALL;
+  markers.markers.push_back(delete_marker);
+  
+  // Add keyframe markers
+  for (const auto& [id, pose] : keyframe_poses) {
+    // Create arrow marker for pose
+    visualization_msgs::msg::Marker arrow;
+    arrow.header.frame_id = frame_id;
+    arrow.header.stamp = timestamp;
+    arrow.ns = "keyframes";
+    arrow.id = id;
+    arrow.type = visualization_msgs::msg::Marker::ARROW;
+    arrow.action = visualization_msgs::msg::Marker::ADD;
+    
+    // Position
+    arrow.pose.position.x = pose.x();
+    arrow.pose.position.y = pose.y();
+    arrow.pose.position.z = 0.1;  // Slightly above ground
+    
+    // Orientation from yaw angle
+    tf2::Quaternion q;
+    q.setRPY(0, 0, pose.theta());
+    arrow.pose.orientation.x = q.x();
+    arrow.pose.orientation.y = q.y();
+    arrow.pose.orientation.z = q.z();
+    arrow.pose.orientation.w = q.w();
+    
+    // Scale
+    arrow.scale.x = 0.5;  // Arrow length
+    arrow.scale.y = 0.1;  // Arrow width
+    arrow.scale.z = 0.1;  // Arrow height
+    
+    // Color - cyan for keyframes
+    arrow.color.r = 0.0;
+    arrow.color.g = 1.0;
+    arrow.color.b = 1.0;
+    arrow.color.a = 0.8;
+    
+    markers.markers.push_back(arrow);
+    
+    // Add text label for keyframe ID
+    visualization_msgs::msg::Marker text;
+    text.header = arrow.header;
+    text.ns = "keyframe_ids";
+    text.id = id;
+    text.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+    text.action = visualization_msgs::msg::Marker::ADD;
+    
+    text.pose.position.x = pose.x();
+    text.pose.position.y = pose.y();
+    text.pose.position.z = 0.8;  // Above arrow
+    text.pose.orientation.w = 1.0;
+    
+    text.scale.z = 0.3;  // Text height
+    
+    text.color.r = 1.0;
+    text.color.g = 1.0;
+    text.color.b = 1.0;
+    text.color.a = 1.0;
+    
+    text.text = "KF" + std::to_string(id);
+    
+    markers.markers.push_back(text);
   }
   
   return markers;

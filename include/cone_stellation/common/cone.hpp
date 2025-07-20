@@ -13,8 +13,8 @@ namespace cone_stellation {
  */
 enum class ConeColor {
   UNKNOWN = 0,
-  YELLOW = 1,   // Left side
-  BLUE = 2,     // Right side  
+  YELLOW = 1,   // Right side (outer track boundary, Y < 0)
+  BLUE = 2,     // Left side (inner track boundary, Y > 0)
   ORANGE = 3,   // Small orange
   RED = 4       // Large red (start/finish)
 };

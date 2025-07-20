@@ -52,7 +52,7 @@ This document describes all ROS2 topics used by the cone_stellation SLAM system 
   - Cone IDs as text labels
   - Colors matching cone types
 
-### 2. `/slam/inter_landmark_factors` [visualization_msgs/msg/MarkerArray]
+### 2. `/slam/factor_graph` [visualization_msgs/msg/MarkerArray]
 - **Publisher**: cone_slam_node
 - **Subscriber**: RViz, other visualization tools
 - **Description**: Factor graph edges for debugging
@@ -70,14 +70,24 @@ This document describes all ROS2 topics used by the cone_stellation SLAM system 
 - **Frame**: map
 - **Rate**: 10 Hz
 
-### 4. `/slam/trajectory` [nav_msgs/msg/Path]
+### 4. `/slam/path` [nav_msgs/msg/Path]
 - **Publisher**: cone_slam_node
 - **Subscriber**: RViz, path planning
 - **Description**: Full trajectory history
 - **Frame**: map
-- **Rate**: 1 Hz
+- **Rate**: 10 Hz
 
-### 5. `/slam/map` [nav_msgs/msg/OccupancyGrid] (Future)
+### 5. `/slam/keyframes` [visualization_msgs/msg/MarkerArray]
+- **Publisher**: cone_slam_node
+- **Subscriber**: RViz, debugging tools
+- **Description**: Keyframe poses visualization
+- **Frame**: map
+- **Rate**: 10 Hz
+- **Content**:
+  - Cyan arrows: Keyframe poses with orientation
+  - Text labels: Keyframe IDs (KF0, KF1, ...)
+
+### 6. `/slam/map` [nav_msgs/msg/OccupancyGrid] (Future)
 - **Publisher**: cone_slam_node
 - **Description**: 2D occupancy grid for navigation
 

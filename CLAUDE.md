@@ -11,15 +11,22 @@ ConeSTELLATION (Cone-based STructural ELement Layout for Autonomous NavigaTION) 
 ## Current Status
 
 - **Created**: 2025-07-18
-- **Updated**: 2025-07-19
-- **Status**: Factor graph SLAM with tentative landmark system
+- **Updated**: 2025-07-20
+- **Status**: Implementing cone-based odometry and data association
 - **Architecture**: Based on GLIM's proven modular design with novel inter-landmark factors
 - **Latest Updates**: 
   - ✅ Topic unified to `/fused_sorted_cones_ukf_sim`
   - ✅ Implemented observation buffering system (TentativeLandmark)
   - ✅ Color voting and track ID hysteresis
-  - ✅ Delayed landmark addition prevents false positives
-  - ⏳ Still needs odometry/mapping separation for real-time performance
+  - ✅ Fixed color definitions to match track layout
+  - ✅ Updated SimpleConeMapping to track colors
+  - ✅ Separated visualization to viewer module
+  - ✅ Implemented cone-based odometry module
+  - ✅ Fixed GTSAM type construction issues
+  - ❌ No data association - landmarks duplicated
+  - ❌ Blue cones appear intermittently
+  - ⏳ Need to implement proper data association
+  - ⏳ Need to test and debug odometry estimation
 
 ## Project Structure (Current)
 
@@ -58,33 +65,34 @@ cone_stellation/
 
 ## Development Phases
 
-1. **Phase 1**: Basic infrastructure and data structures ✅
-   - ✅ Simulation integration complete
-   - ✅ Enhanced visualization module created
-   - ✅ Core data structures defined
-2. **Phase 2**: Core module implementations ✅
-   - ✅ ConePreprocessor for outlier rejection and pattern detection
-   - ✅ ConeMapping with ISAM2 optimization
-   - ✅ Inter-landmark factors (ConeDistanceFactor, ConeLineFactor)
-3. **Phase 3**: GTSAM integration ✅
-   - ✅ Custom factors for inter-landmark constraints
-   - ✅ ISAM2 incremental optimization
-   - ✅ Factor graph construction
-   - ✅ Custom ConeObservationFactor for pose-landmark measurements
-4. **Phase 4**: ROS2 integration ✅
-   - ✅ Basic ROS2 node (cone_slam_node)
-   - ✅ TF publishing and visualization
-   - ✅ Configuration via YAML
-   - ✅ Factor graph visualization with color-coded edges
-5. **Phase 5**: Testing and refinement (Current)
-   - ✅ Integration with dummy publisher
-   - ✅ Factor graph creation and visualization
-   - ⏳ Real-time performance optimization
-   - ⏳ Loop closure detection
-6. **Phase 6**: Advanced features (Future)
-   - ⏳ IMU/GPS integration
-   - ⏳ Multi-session mapping
-   - ⏳ Advanced pattern recognition
+### Completed Phases ✅
+1. **Basic Infrastructure**: Core data structures, simulation, visualization
+2. **Core Modules**: ConePreprocessor, ConeMapping with ISAM2
+3. **GTSAM Integration**: Custom factors (inter-landmark, observation)
+4. **ROS2 Integration**: Basic node, TF, config, visualization
+5. **Tentative Landmarks**: Observation buffering, color voting, promotion criteria
+
+### Current Development (Detailed in docs/)
+- **Phase 1-4**: Odometry/mapping separation (see `odometry_mapping_separation.md`)
+- **Phase 5**: Fixed-lag smoother implementation (see `DEVELOPMENT_PLAN.md`)
+- **Phase 6**: Enhanced color voting and track management
+- **Phase 7**: Loop closure with cone constellations
+- **Phase 8-10**: IMU/GPS integration
+
+### GLIM Features Integration
+See `glim_features_integration.md` for detailed roadmap including:
+- Multi-threading architecture
+- Memory management strategies
+- Robust optimization techniques
+- Configuration management
+- Serialization and recovery
+
+### Implementation Status
+See `implementation_status.md` for:
+- ✅ Already implemented features
+- ❌ Not yet implemented features
+- Performance targets and metrics
+- Testing requirements
 
 ## Dependencies
 

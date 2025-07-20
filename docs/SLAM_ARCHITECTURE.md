@@ -184,3 +184,44 @@ See `config/slam_config.yaml` for all parameters including:
 - **Map Consistency**: Cone position accuracy
 - **Pattern Preservation**: Track structure quality
 - **Computational Performance**: Real-time factor
+
+## Odometry/Mapping Separation (Production Architecture)
+
+Following GLIM's proven multi-rate architecture, ConeSTELLATION will be separated into two nodes for production:
+
+### Current Architecture (Monolithic)
+```
+cone_slam_node (10 Hz)
+├── Cone Detection Input
+├── Odometry Input
+├── SLAM Processing
+│   ├── Data Association
+│   ├── Factor Graph Construction
+│   └── ISAM2 Optimization
+└── Visualization Output
+```
+
+### Target Architecture (Separated)
+```
+cone_odometry_node (20-50 Hz)          cone_mapping_node (1-10 Hz)
+├── Cone Detection Input               ├── Keyframe Input (from odometry)
+├── Odometry Input                     ├── Cone Observations (buffered)
+├── Fast Pose Tracking                 ├── Global Map Building
+│   ├── Frame-to-Frame Matching      │   ├── Landmark Management
+│   ├── Local Map Tracking           │   ├── Inter-landmark Factors
+│   └── Pose Prediction              │   └── Loop Closure Detection
+├── Keyframe Selection                 ├── ISAM2 Optimization
+└── High-Rate Pose Output             └── Map Correction Output
+```
+
+### Benefits of Separation
+1. **Performance**: Odometry runs at sensor rate without optimization pressure
+2. **Robustness**: Independent failure modes, easier debugging
+3. **Scalability**: Can run on separate machines, mapping can process offline
+
+### Implementation Priority
+1. Extract ConeOdometryEstimation module (2 weeks)
+2. Refactor ConeMapping for batch processing (1 week)
+3. Integration and testing (1 week)
+
+See `glim_features_integration.md` for detailed implementation plan.

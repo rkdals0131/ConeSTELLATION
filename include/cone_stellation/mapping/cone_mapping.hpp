@@ -71,6 +71,10 @@ public:
     gtsam::ISAM2Params params;
     params.relinearizeThreshold = config_.isam2_relinearize_threshold;
     params.relinearizeSkip = config_.isam2_relinearize_skip;
+    params.enableRelinearization = true;
+    params.evaluateNonlinearError = true;
+    params.cacheLinearizedFactors = false;  // Don't cache to save memory
+    params.findUnusedFactorSlots = true;   // Clean up unused factor slots
     isam2_ = std::make_shared<gtsam::ISAM2>(params);
   }
   
@@ -105,10 +109,11 @@ public:
     }
     
     RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
-                "Added keyframe %d with %zu observations, total factors: %zu", 
+                "Added keyframe %d with %zu observations, total factors: %zu, landmarks: %zu", 
                 next_pose_id_ - 1,
                 frame->cone_observations ? frame->cone_observations->cones.size() : 0,
-                new_factors_.size());
+                new_factors_.size(),
+                landmarks_.size());
   }
   
   /**
@@ -147,6 +152,13 @@ public:
       }
     }
     return poses;
+  }
+  
+  /**
+   * @brief Get the next pose ID (for frame->id assignment)
+   */
+  int get_next_pose_id() const {
+    return next_pose_id_;
   }
 
 private:
@@ -236,14 +248,46 @@ private:
         add_observation_factor(pose_key, landmark_id, obs);
         observed_landmark_ids.push_back(landmark_id);
         landmarks_[landmark_id]->increment_observations();
+        RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
+                    "Associated observation %zu with landmark %d", i, landmark_id);
       } else {
-        // Try to associate with tentative landmarks
-        associate_with_tentative_landmark(obs, frame);
+        // For now, create landmarks immediately if we have few landmarks
+        // This ensures the graph is properly constrained from the start
+        if (landmarks_.size() < 10) {
+          // Create new landmark immediately
+          Eigen::Vector2d world_pos = frame->transform_to_world(obs);
+          int new_landmark_id = next_landmark_id_++;
+          landmarks_[new_landmark_id] = std::make_shared<ConeLandmark>(new_landmark_id, world_pos, obs.color);
+          
+          // Add to GTSAM
+          gtsam::Symbol landmark_key('l', new_landmark_id);
+          initial_values_.insert(landmark_key, gtsam::Point2(world_pos));
+          
+          // Add prior for first few landmarks
+          if (new_landmark_id < 3) {
+            auto prior_noise = gtsam::noiseModel::Diagonal::Sigmas(gtsam::Vector2(0.1, 0.1));
+            new_factors_.emplace_shared<gtsam::PriorFactor<gtsam::Point2>>(
+                landmark_key, gtsam::Point2(world_pos), prior_noise);
+            RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                        "Created landmark %d with prior at (%.2f, %.2f)", 
+                        new_landmark_id, world_pos.x(), world_pos.y());
+          }
+          
+          // Add observation factor
+          frame->observation_to_landmark[i] = new_landmark_id;
+          add_observation_factor(pose_key, new_landmark_id, obs);
+          observed_landmark_ids.push_back(new_landmark_id);
+        } else {
+          // Use tentative landmarks for later landmarks
+          associate_with_tentative_landmark(obs, frame);
+        }
       }
     }
     
-    // Check if any tentative landmarks are ready for promotion
-    promote_tentative_landmarks();
+    // Only promote tentative landmarks after we have enough confirmed ones
+    if (landmarks_.size() >= 10) {
+      promote_tentative_landmarks();
+    }
     
     // Create inter-landmark factors for co-observed confirmed landmarks
     if (config_.enable_inter_landmark_factors && observed_landmark_ids.size() >= 2) {
@@ -296,7 +340,7 @@ private:
     // Use our custom cone observation factor
     // The observation is already in vehicle frame
     new_factors_.emplace_shared<ConeObservationFactor>(
-        pose_key, landmark_key, gtsam::Point2(obs.position), obs_noise);
+        pose_key, landmark_key, gtsam::Point2(obs.position.x(), obs.position.y()), obs_noise);
     
     RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
                 "Added observation factor: pose %s -> landmark %s", 
@@ -378,6 +422,17 @@ private:
     if (found1 && found2) {
       double measured_distance = (pos2 - pos1).norm();
       
+      // Check if both landmarks exist in values
+      auto current_estimate = isam2_->calculateEstimate();
+      bool landmark1_exists = current_estimate.exists(landmark1_key) || initial_values_.exists(landmark1_key);
+      bool landmark2_exists = current_estimate.exists(landmark2_key) || initial_values_.exists(landmark2_key);
+      
+      if (!landmark1_exists || !landmark2_exists) {
+        RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
+                    "Skipping inter-landmark factor - landmarks not yet in graph");
+        return;
+      }
+      
       auto distance_noise = gtsam::noiseModel::Diagonal::Sigmas(
           gtsam::Vector1(config_.inter_landmark_distance_noise));
       
@@ -390,6 +445,9 @@ private:
    * @brief Create factors from detected patterns
    */
   void create_pattern_factors(const ConePattern& pattern, const EstimationFrame::Ptr& frame) {
+    // TEMPORARILY DISABLED for debugging
+    return;
+    
     if (pattern.type == ConePattern::LINE && pattern.cone_ids.size() >= 3) {
       // Create line factors for all triples
       for (size_t i = 0; i < pattern.cone_ids.size() - 2; ++i) {
@@ -424,31 +482,56 @@ private:
    * @brief Run optimization
    */
   void optimize() {
+    if (new_factors_.empty() && initial_values_.empty()) {
+      RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
+                  "Skipping optimization - no new factors or values");
+      return;
+    }
+    
     RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
                 "Running optimization with %zu new factors and %zu new values", 
                 new_factors_.size(), initial_values_.size());
     
-    // Perform ISAM2 update
-    isam2_->update(new_factors_, initial_values_);
-    
-    // Clear for next iteration
-    new_factors_.resize(0);
-    initial_values_.clear();
-    frames_since_optimization_ = 0;
-    
-    // Update landmark positions from optimized values
-    auto current_estimate = isam2_->calculateEstimate();
-    for (auto& [id, landmark] : landmarks_) {
-      gtsam::Symbol landmark_key('l', id);
-      if (current_estimate.exists(landmark_key)) {
-        gtsam::Point2 optimized_pos = current_estimate.at<gtsam::Point2>(landmark_key);
-        landmark->update_position(Eigen::Vector2d(optimized_pos.x(), optimized_pos.y()));
+    try {
+      // Log factor details before optimization
+      RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
+                  "Factor graph details: %zu total factors in graph", 
+                  isam2_->getFactorsUnsafe().size());
+      
+      // Perform ISAM2 update
+      gtsam::ISAM2Result result = isam2_->update(new_factors_, initial_values_);
+      
+      RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
+                  "ISAM2 update result: %zu cliques updated, %zu variables re-eliminated", 
+                  result.cliques, result.variablesReeliminated);
+      
+      // Skip additional optimization for now to reduce complexity
+      // isam2_->update();
+      
+      // Clear for next iteration
+      new_factors_.resize(0);
+      initial_values_.clear();
+      frames_since_optimization_ = 0;
+      
+      // Update landmark positions from optimized values
+      auto current_estimate = isam2_->calculateEstimate();
+      for (auto& [id, landmark] : landmarks_) {
+        gtsam::Symbol landmark_key('l', id);
+        if (current_estimate.exists(landmark_key)) {
+          gtsam::Point2 optimized_pos = current_estimate.at<gtsam::Point2>(landmark_key);
+          landmark->update_position(Eigen::Vector2d(optimized_pos.x(), optimized_pos.y()));
+        }
       }
+      
+      RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                  "Optimization complete. Total poses: %d, Total landmarks: %zu", 
+                  next_pose_id_, landmarks_.size());
+                  
+    } catch (const std::exception& e) {
+      RCLCPP_ERROR(rclcpp::get_logger("cone_mapping"), 
+                  "Optimization failed: %s", e.what());
+      // Don't clear factors/values so we can try again next time
     }
-    
-    RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
-                "Optimization complete. Total poses: %d, Total landmarks: %zu", 
-                next_pose_id_, landmarks_.size());
   }
   
   Config config_;
@@ -533,19 +616,40 @@ private:
         
         // Add to GTSAM
         gtsam::Symbol landmark_key('l', landmark_id);
-        initial_values_.insert(landmark_key, gtsam::Point2(position));
+        initial_values_.insert(landmark_key, gtsam::Point2(position.x(), position.y()));
         
-        // Add prior to prevent underconstrained system
-        auto landmark_prior_noise = gtsam::noiseModel::Diagonal::Sigmas(
-            gtsam::Vector2(1.0, 1.0)); // Tighter prior since we have multiple observations
-        new_factors_.emplace_shared<gtsam::PriorFactor<gtsam::Point2>>(
-            landmark_key, gtsam::Point2(position), landmark_prior_noise);
+        // Add prior only for first few landmarks to prevent underconstrained system
+        if (landmark_id < 3) {  // Only add strong priors to first 3 landmarks
+          auto landmark_prior_noise = gtsam::noiseModel::Diagonal::Sigmas(
+              gtsam::Vector2(0.1, 0.1)); // Strong prior for anchor landmarks
+          new_factors_.emplace_shared<gtsam::PriorFactor<gtsam::Point2>>(
+              landmark_key, gtsam::Point2(position.x(), position.y()), landmark_prior_noise);
+          RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                      "Added prior to landmark %d as anchor", landmark_id);
+        }
         
         // Add observation factors from all frames that observed this tentative landmark
         auto observing_frames = tentative->get_observing_frames();
+        int valid_observations = 0;
         for (int frame_id : observing_frames) {
           if (frames_.count(frame_id) > 0) {
             gtsam::Symbol pose_key('x', frame_id);
+            
+            // Check if this pose still exists in values (either current estimate or new values)
+            bool pose_exists = false;
+            try {
+              auto current_estimate = isam2_->calculateEstimate();
+              pose_exists = current_estimate.exists(pose_key) || initial_values_.exists(pose_key);
+            } catch (...) {
+              // If there's any error checking, assume pose doesn't exist
+              pose_exists = false;
+            }
+            
+            if (!pose_exists) {
+              RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
+                          "Skipping observation from frame %d - pose no longer available", frame_id);
+              continue;
+            }
             
             // Find the observation from this frame
             for (const auto& obs : tentative->get_observations()) {
@@ -554,11 +658,22 @@ private:
                 auto obs_noise = gtsam::noiseModel::Diagonal::Sigmas(
                     gtsam::Vector2(config_.cone_observation_noise, config_.cone_observation_noise));
                 new_factors_.emplace_shared<ConeObservationFactor>(
-                    pose_key, landmark_key, gtsam::Point2(obs.sensor_position), obs_noise);
+                    pose_key, landmark_key, gtsam::Point2(obs.sensor_position.x(), obs.sensor_position.y()), obs_noise);
+                valid_observations++;
                 break;
               }
             }
           }
+        }
+        
+        // If no valid observations could be added, skip this landmark
+        if (valid_observations == 0) {
+          RCLCPP_WARN(rclcpp::get_logger("cone_mapping"), 
+                      "Skipping landmark promotion - no valid observations in current graph");
+          initial_values_.erase(landmark_key);
+          landmarks_.erase(landmark_id);
+          next_landmark_id_--;
+          continue;
         }
         
         promoted_ids.push_back(id);
