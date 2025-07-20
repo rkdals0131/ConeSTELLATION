@@ -559,3 +559,60 @@ EOF < /dev/null
 
 **Result**: Multiple stability improvements, ready for testing
 EOF < /dev/null
+
+## 2025-07-20 21:00 - Major SLAM Improvements Achieved
+**Issue**: Evaluating current SLAM performance and architecture
+**Problem**: Need to assess working features and plan next steps
+
+**Analysis**: Comprehensive review reveals significant improvements:
+- Data association working excellently with track ID utilization
+- Noise filtering successfully blocks false detections
+- Factor graph properly constructed with clean visualization
+- Real-time optimization smoothly adjusting map
+- Multiple TF frames properly separated (ground truth, slam, odom sim)
+
+**Architecture Decision** (via Gemini consultation):
+- Primary Control: IMU+GPS fusion at 100+ Hz (low latency, continuous)
+- SLAM Role: Drift correction at 10-30 Hz (global consistency)
+- Multi-rate architecture decouples control from optimization
+
+**Remaining Issues**:
+1. map->odom tf fixed at identity (no drift correction)
+2. Need odometry/mapping separation for 100Hz control
+3. Inter-landmark factors implemented but disabled
+4. No loop closure (planned after IMU/GPS integration)
+
+**Result**: SLAM fundamentally working! Clear priorities established:
+1. Implement drift correction mechanism
+2. Separate odometry module for high-rate tracking
+3. Enable and tune inter-landmark factors
+4. Integrate IMU/GPS for robust fusion
+
+## 2025-07-20 22:00 - Drift Correction Implemented
+**Issue**: map->odom transform fixed at identity preventing true SLAM
+**Problem**: No mechanism to calculate and publish drift between odometry and SLAM estimates
+
+**Solution**: Implemented DriftCorrectionManager based on GLIM's TrajectoryManager:
+- Created drift_correction_manager.hpp with odometry history buffer
+- Pose interpolation using SLERP for rotation, linear for translation
+- Thread-safe access with mutex protection
+- Integrated into cone_slam_node.cpp
+
+**Implementation Details**:
+1. Stores odometry poses continuously (currently from ground truth)
+2. When SLAM optimization completes, updates drift correction
+3. Calculates T_map_odom = T_map_base * T_odom_base.inverse()
+4. Publishes actual drift transform instead of identity
+5. Works with both SimpleConeMapping and ConeMapping
+
+**Design Decisions**:
+- Odometry source agnostic (works with wheel, IMU+GPS, or any fusion)
+- Simple implementation (~100 lines) focused on core functionality
+- Future-ready for IMU preintegration and GPS factors
+- Based on proven GLIM architecture patterns
+
+**Result**: True SLAM now operational! System can:
+- Track drift between odometry and optimized poses
+- Provide globally consistent localization via TF
+- Support downstream navigation nodes properly
+- Ready for high-rate odometry separation

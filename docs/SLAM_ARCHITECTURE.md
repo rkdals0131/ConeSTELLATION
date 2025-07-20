@@ -4,6 +4,21 @@
 
 ConeSTELLATION is a cone-based Graph SLAM system that extends GLIM's architecture with novel inter-landmark factors. The key innovation is adding geometric constraints between cones observed from the same pose, extracting maximum information from sparse cone observations.
 
+## Current Status (2025-07-20)
+
+### Working Features ✅
+- **Data Association**: Excellent performance with minimal overlapping landmark markers
+- **Noise Filtering**: Successfully filters noise cones, wrong colored cones, false positives/negatives
+- **Factor Graph Construction**: Properly builds graph with pose-landmark observation edges (KF** format)
+- **Graph Optimization**: Real-time backend optimization correctly adjusts poses and map
+- **Visualization**: Clean factor graph visualization without orphan nodes
+
+### Not Yet Implemented ❌
+- **Inter-Landmark Factors**: Implemented but not yet enabled in configuration
+- **Loop Closure**: Planned after IMU Preintegration + RTK GPS + inter-landmark factors
+- **Drift Correction**: map->odom transform remains fixed at identity (no tf adjustment)
+- **High-rate Odometry**: Currently running at SLAM rate, not sensor rate
+
 ## Core Innovation: Inter-Landmark Factors
 
 Traditional SLAM only creates factors between:
@@ -111,29 +126,30 @@ residual = parallelism(left_cones, right_cones)
 
 ## Implementation Plan
 
-### Phase 1: Basic Framework
-- [ ] Core data structures (Cone, ConeObservation)
-- [ ] Basic factor graph with pose-landmark factors
-- [ ] Simple data association
-- [ ] Visualization infrastructure
+### Phase 1: Basic Framework ✅ COMPLETED
+- [x] Core data structures (Cone, ConeObservation)
+- [x] Basic factor graph with pose-landmark factors
+- [x] Simple data association with track ID support
+- [x] Visualization infrastructure (factor graph, landmarks, paths)
 
-### Phase 2: Inter-Landmark Factors
-- [ ] Pairwise distance factors
-- [ ] Co-visibility tracking
+### Phase 2: Inter-Landmark Factors ⏳ IN PROGRESS
+- [x] Pairwise distance factors (implemented)
+- [x] Line alignment factors (implemented)
+- [ ] Enable in configuration and test
+- [ ] Co-visibility tracking integration
 - [ ] Factor weight tuning
-- [ ] Performance optimization
 
-### Phase 3: Pattern Recognition
-- [ ] Line detection from cone sets
-- [ ] Curve fitting algorithms
-- [ ] Pattern-based factors
-- [ ] Track structure enforcement
+### Phase 3: Drift Correction & High-Rate Odometry 🎯 PRIORITY
+- [ ] Implement map->odom transform calculation
+- [ ] Separate odometry module for sensor-rate tracking
+- [ ] Drift visualization and monitoring
+- [ ] Smooth correction interpolation
 
-### Phase 4: Advanced Features
-- [ ] Multi-hypothesis data association
-- [ ] Dynamic factor weighting
-- [ ] Map management and cleanup
-- [ ] Loop closure with inter-landmark validation
+### Phase 4: Advanced Features 🔮 FUTURE
+- [ ] IMU Preintegration for robust motion prediction
+- [ ] RTK GPS integration for global consistency
+- [ ] Loop closure with constellation descriptors
+- [ ] Pattern-based track structure enforcement
 
 ## Technical Details
 
@@ -184,6 +200,68 @@ See `config/slam_config.yaml` for all parameters including:
 - **Map Consistency**: Cone position accuracy
 - **Pattern Preservation**: Track structure quality
 - **Computational Performance**: Real-time factor
+
+## Future Roadmap
+
+### Sensor Fusion Architecture
+The system is designed to eventually incorporate IMU and RTK GPS for robust performance:
+
+1. **IMU Integration**
+   - Preintegration between keyframes for smooth motion estimation
+   - Bias estimation and gravity alignment
+   - Higher frequency pose prediction (100+ Hz)
+   
+2. **RTK GPS Integration**
+   - Global position constraints to prevent long-term drift
+   - Absolute coordinate reference for mapping
+   - Fallback for challenging scenarios (few visible cones)
+
+3. **Inter-Landmark Factors**
+   - Essential for sparse cone environments
+   - Provides additional constraints when few cones visible
+   - Works synergistically with RTK GPS for loop closure
+
+### Why This Order Matters
+- Current system proves SLAM logic works independently of simulator
+- Adding IMU/GPS will enhance robustness without changing core architecture
+- Inter-landmark factors become more valuable with absolute positioning
+
+## Odometry Architecture Decision
+
+### Primary Control Odometry: IMU+GPS Fusion (100+ Hz)
+Based on Formula Student requirements (speeds up to 100 km/h, ~200-300m tracks):
+
+**Why IMU+GPS for Vehicle Control:**
+- **High Frequency**: 100+ Hz necessary for stable control at high speeds
+- **Low Latency**: Direct sensor data without optimization delays
+- **Continuous Operation**: Works even with poor cone visibility
+- **Smooth Control**: No jumps from optimization updates
+
+**Why NOT Direct SLAM Output:**
+- **Too Slow**: 10Hz insufficient for 100 km/h control
+- **High Latency**: Optimization introduces control delays
+- **Potential Jumps**: Loop closures can cause instability
+- **Landmark Dependent**: Fails without visible cones
+
+### SLAM's Role: Drift Correction
+- Provides globally consistent pose estimates
+- Corrects IMU drift periodically
+- Updates map for path planning
+- Runs at sustainable rate (10-30 Hz)
+
+### Multi-Rate Architecture Benefits
+1. **Decoupling**: Control loop independent of SLAM computation
+2. **Robustness**: Control continues if SLAM delays/fails
+3. **Accuracy**: Combines IMU responsiveness with SLAM accuracy
+4. **Scalability**: Can optimize SLAM without affecting control
+
+### Implementation Strategy
+```
+IMU+GPS (100+ Hz) → Vehicle Control
+    ↓
+    ├→ SLAM (10-30 Hz) → Drift Correction
+    └→ Kalman Filter → Fused Estimate
+```
 
 ## Odometry/Mapping Separation (Production Architecture)
 

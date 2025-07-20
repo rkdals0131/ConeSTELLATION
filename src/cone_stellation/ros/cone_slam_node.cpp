@@ -17,6 +17,7 @@
 #include "cone_stellation/mapping/simple_cone_mapping.hpp"
 #include "cone_stellation/common/tentative_landmark.hpp"
 #include "cone_stellation/util/ros_utils.hpp"
+#include "cone_stellation/util/drift_correction_manager.hpp"
 #include "cone_stellation/viewer/slam_visualizer.hpp"
 #include "custom_interface/msg/tracked_cone_array.hpp"
 
@@ -72,6 +73,9 @@ public:
     // Initialize visualizer
     slam_visualizer_ = std::make_shared<viewer::SLAMVisualizer>(this);
     slam_visualizer_->initialize();
+    
+    // Initialize drift correction manager
+    drift_manager_ = std::make_shared<DriftCorrectionManager>();
     
     // Publishers
     pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/slam/pose", 10);
@@ -208,6 +212,10 @@ private:
       
       last_keyframe_pose_ = sensor_pose;
       
+      // Store odometry pose for drift correction
+      double timestamp = rclcpp::Time(msg->header.stamp).seconds();
+      drift_manager_->add_odometry_pose(timestamp, sensor_pose);
+      
       // Add to path
       geometry_msgs::msg::PoseStamped path_pose;
       path_pose.header.stamp = msg->header.stamp;
@@ -311,15 +319,26 @@ private:
   }
   
   void visualization_callback() {
-    // Publish map->odom transform (identity for now)
+    // Get drift correction transform
+    auto T_map_odom = drift_manager_->get_map_to_odom();
+    
+    // Publish map->odom transform with drift correction
     geometry_msgs::msg::TransformStamped map_to_odom;
     map_to_odom.header.stamp = this->now();
     map_to_odom.header.frame_id = "map";
     map_to_odom.child_frame_id = "odom";
-    map_to_odom.transform.translation.x = 0.0;
-    map_to_odom.transform.translation.y = 0.0;
-    map_to_odom.transform.translation.z = 0.0;
-    map_to_odom.transform.rotation.w = 1.0;
+    
+    // Convert Eigen transform to geometry_msgs
+    map_to_odom.transform.translation.x = T_map_odom.translation().x();
+    map_to_odom.transform.translation.y = T_map_odom.translation().y();
+    map_to_odom.transform.translation.z = T_map_odom.translation().z();
+    
+    Eigen::Quaterniond q_drift(T_map_odom.rotation());
+    map_to_odom.transform.rotation.x = q_drift.x();
+    map_to_odom.transform.rotation.y = q_drift.y();
+    map_to_odom.transform.rotation.z = q_drift.z();
+    map_to_odom.transform.rotation.w = q_drift.w();
+    
     tf_broadcaster_.sendTransform(map_to_odom);
     
     // Get current estimates
@@ -395,6 +414,33 @@ private:
         auto values = simple_mapping_->get_current_estimate();
         if (factor_graph.size() > 0) {
           slam_visualizer_->visualizeFactorGraph(factor_graph, values);
+          
+          // Update drift correction for SimpleConeMapping
+          if (!values.empty()) {
+            // Get latest pose - find highest pose index
+            int latest_pose_id = -1;
+            for (int i = 0; i < 100; i++) { // reasonable upper bound for simple mapping
+              gtsam::Symbol pose_key('x', i);
+              if (values.exists(pose_key)) {
+                latest_pose_id = i;
+              } else {
+                break;
+              }
+            }
+            
+            if (latest_pose_id >= 0) {
+              gtsam::Symbol latest_pose_key('x', latest_pose_id);
+              auto pose2d = values.at<gtsam::Pose2>(latest_pose_key);
+              
+              // Update drift correction
+              Eigen::Isometry3d T_map_base = Eigen::Isometry3d::Identity();
+              T_map_base.translation() = Eigen::Vector3d(pose2d.x(), pose2d.y(), 0.0);
+              T_map_base.linear() = Eigen::AngleAxisd(pose2d.theta(), Eigen::Vector3d::UnitZ()).toRotationMatrix();
+              
+              double current_time = this->now().seconds();
+              drift_manager_->update_slam_pose(current_time, T_map_base);
+            }
+          }
         }
       } catch (const std::exception& e) {
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
@@ -473,6 +519,15 @@ private:
           
           tf_broadcaster_.sendTransform(tf_msg);
           
+          // Update drift correction with optimized SLAM pose
+          Eigen::Isometry3d T_map_base = Eigen::Isometry3d::Identity();
+          T_map_base.translation() = Eigen::Vector3d(pose2d.x(), pose2d.y(), 0.0);
+          T_map_base.linear() = Eigen::AngleAxisd(pose2d.theta(), Eigen::Vector3d::UnitZ()).toRotationMatrix();
+          
+          // Use current time for now (ideally should get timestamp from keyframe)
+          double current_time = this->now().seconds();
+          drift_manager_->update_slam_pose(current_time, T_map_base);
+          
           RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                               "Current pose: x=%.2f, y=%.2f, theta=%.2f", 
                               pose2d.x(), pose2d.y(), pose2d.theta());
@@ -526,6 +581,7 @@ private:
   ConeMapping::Ptr mapping_;
   SimpleConeMapping::Ptr simple_mapping_;
   bool use_simple_mapping_ = false;
+  std::shared_ptr<DriftCorrectionManager> drift_manager_;
   
   // Configuration
   ConePreprocessor::Config preprocess_config_;
