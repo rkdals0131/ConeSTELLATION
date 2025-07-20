@@ -53,11 +53,23 @@ public:
     // Check if we should use simple mapping for debugging
     bool use_simple_mapping = this->declare_parameter("mapping.use_simple_mapping", false);
     
+    RCLCPP_INFO(this->get_logger(), "use_simple_mapping parameter value: %s", 
+                use_simple_mapping ? "true" : "false");
+    
+    // FORCE USE OF CONEMAPPING FOR TESTING INTER-LANDMARK FACTORS
+    use_simple_mapping = false;
+    RCLCPP_INFO(this->get_logger(), "FORCING use_simple_mapping to false for testing");
+    
+    // Debug: Double check the value
+    RCLCPP_INFO(this->get_logger(), "After forcing, use_simple_mapping = %s", 
+                use_simple_mapping ? "true" : "false");
+    
     if (use_simple_mapping) {
       RCLCPP_WARN(this->get_logger(), "Using SimpleConeMapping for debugging");
       simple_mapping_ = std::make_shared<SimpleConeMapping>();
       use_simple_mapping_ = true;
     } else {
+      RCLCPP_INFO(this->get_logger(), "Using ConeMapping with inter-landmark factors support");
       mapping_ = std::make_shared<ConeMapping>(mapping_config_);
       use_simple_mapping_ = false;
     }
@@ -204,10 +216,13 @@ private:
         frame->id = 0;  // SimpleConeMapping doesn't track IDs
         // Add to simple mapping
         simple_mapping_->add_keyframe(frame);
+        RCLCPP_INFO(this->get_logger(), "Using SimpleConeMapping");
       } else {
         frame->id = mapping_->get_next_pose_id();
+        RCLCPP_INFO(this->get_logger(), "About to call ConeMapping::add_keyframe for frame %d", frame->id);
         // Add to mapping
         mapping_->add_keyframe(frame);
+        RCLCPP_INFO(this->get_logger(), "ConeMapping::add_keyframe returned");
       }
       
       last_keyframe_pose_ = sensor_pose;

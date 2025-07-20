@@ -62,9 +62,14 @@ public:
   void update_confidence(double conf) { confidence_ = conf; }
   
   // Co-observation tracking
-  void add_co_observed(int cone_id) { co_observed_cones_.insert(cone_id); }
+  void add_co_observed(int cone_id) { 
+    co_observed_cones_.insert(cone_id);
+    co_observation_counts_[cone_id]++;
+  }
   void add_co_observed(const std::vector<int>& cone_ids) {
-    co_observed_cones_.insert(cone_ids.begin(), cone_ids.end());
+    for (int id : cone_ids) {
+      add_co_observed(id);
+    }
   }
   
   // Check if this cone has been observed together with another
@@ -74,8 +79,8 @@ public:
   
   // Calculate co-observation strength (number of times seen together)
   int co_observation_count(int cone_id) const {
-    // For now, just binary. Could extend to count actual occurrences
-    return is_co_observed_with(cone_id) ? 1 : 0;
+    auto it = co_observation_counts_.find(cone_id);
+    return (it != co_observation_counts_.end()) ? it->second : 0;
   }
 
   // Track ID management
@@ -106,6 +111,7 @@ private:
   int observations_;              // Number of times observed
   double confidence_;             // Landmark confidence
   std::set<int> co_observed_cones_; // IDs of cones observed together
+  std::map<int, int> co_observation_counts_; // Count of co-observations per cone
   int primary_track_id_;          // Primary track ID from sensor
   std::map<int, float> track_id_scores_; // Track ID observation history with scores
 };

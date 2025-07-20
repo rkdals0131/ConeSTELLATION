@@ -616,3 +616,19 @@ EOF < /dev/null
 - Provide globally consistent localization via TF
 - Support downstream navigation nodes properly
 - Ready for high-rate odometry separation
+
+## 2025-07-20 23:00 - Inter-landmark Factor Creation Bug Fixed
+**Issue**: Inter-landmark factors never created despite being enabled
+**Problem**: 
+- ConeLandmark::co_observation_count() only returned binary values (0 or 1)
+- slam_config.yaml had min_covisibility_count: 2
+- Condition co_obs_count < min_covisibility_count was always true (1 < 2)
+- Therefore, inter-landmark factors were never created
+
+**Solution**:
+- Modified ConeLandmark to track actual co-observation counts
+- Added co_observation_counts_ map to store count per landmark pair
+- Updated add_co_observed() to increment counter
+- Temporarily reduced min_covisibility_count to 1 for testing
+
+**Result**: Inter-landmark factors should now be created when landmarks are co-observed

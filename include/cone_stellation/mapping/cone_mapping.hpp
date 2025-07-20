@@ -3,6 +3,7 @@
 #include <memory>
 #include <unordered_map>
 #include <set>
+#include <sstream>
 #include <gtsam/nonlinear/ISAM2.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/nonlinear/Values.h>
@@ -67,6 +68,10 @@ public:
       next_tentative_id_(0),
       frames_since_optimization_(0) {
     
+    RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                "ConeMapping constructor called with inter_landmark_factors = %s",
+                config_.enable_inter_landmark_factors ? "ENABLED" : "DISABLED");
+    
     // Initialize ISAM2
     gtsam::ISAM2Params params;
     params.relinearizeThreshold = config_.isam2_relinearize_threshold;
@@ -83,6 +88,9 @@ public:
    * @brief Add new keyframe to the map
    */
   void add_keyframe(const EstimationFrame::Ptr& frame) {
+    RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                "ConeMapping::add_keyframe called for frame %d", frame->id);
+    
     // Create pose variable
     gtsam::Symbol pose_key('x', next_pose_id_);
     
@@ -96,7 +104,12 @@ public:
     
     // Process cone observations
     if (frame->cone_observations) {
+      RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                  "Processing %zu cone observations", frame->cone_observations->cones.size());
       process_cone_observations(frame, pose_key);
+    } else {
+      RCLCPP_WARN(rclcpp::get_logger("cone_mapping"), 
+                  "No cone observations in frame %d", frame->id);
     }
     
     // Store frame
@@ -233,8 +246,14 @@ private:
    */
   void process_cone_observations(const EstimationFrame::Ptr& frame, 
                                 const gtsam::Symbol& pose_key) {
+    RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                "process_cone_observations called for frame %d", frame->id);
+    
     const auto& obs_set = *frame->cone_observations;
     std::vector<int> observed_landmark_ids;
+    
+    // Clear tentative to landmark mapping for this frame
+    tentative_to_landmark_.clear();
     
     // Process each observation
     for (size_t i = 0; i < obs_set.cones.size(); i++) {
@@ -255,7 +274,7 @@ private:
       } else {
         // For now, create landmarks immediately if we have few landmarks
         // This ensures the graph is properly constrained from the start
-        if (landmarks_.size() < 10) {
+        if (landmarks_.size() < 30) {  // Increased for testing inter-landmark factors
           // Create new landmark immediately
           Eigen::Vector2d world_pos = frame->transform_to_world(obs);
           int new_landmark_id = next_landmark_id_++;
@@ -282,7 +301,11 @@ private:
           observed_landmark_ids.push_back(new_landmark_id);
         } else {
           // Use tentative landmarks for later landmarks
-          associate_with_tentative_landmark(obs, frame);
+          int tentative_id = associate_with_tentative_landmark(obs, frame);
+          if (tentative_id >= 0) {
+            // Store mapping for potential lookup after promotion
+            frame->observation_to_landmark[i] = -tentative_id - 1; // Negative to indicate tentative
+          }
         }
       }
     }
@@ -290,11 +313,59 @@ private:
     // Only promote tentative landmarks after we have enough confirmed ones
     if (landmarks_.size() >= 10) {
       promote_tentative_landmarks();
+      
+      // Check if any newly promoted landmarks were observed in this frame
+      for (size_t i = 0; i < obs_set.cones.size(); i++) {
+        if (frame->observation_to_landmark.count(i) > 0) {
+          int stored_id = frame->observation_to_landmark[i];
+          if (stored_id < 0) { // Was tentative
+            int tentative_id = -stored_id - 1;
+            if (tentative_to_landmark_.count(tentative_id) > 0) {
+              int landmark_id = tentative_to_landmark_[tentative_id];
+              // Update mapping and add to observed list
+              frame->observation_to_landmark[i] = landmark_id;
+              observed_landmark_ids.push_back(landmark_id);
+              
+              // Add observation factor for this newly promoted landmark
+              const auto& obs = obs_set.cones[i];
+              add_observation_factor(pose_key, landmark_id, obs);
+              
+              RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                          "Added promoted landmark %d to observed list for inter-landmark factors", 
+                          landmark_id);
+            }
+          }
+        }
+      }
+    }
+    
+    // Debug: Always log observed landmark count
+    RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                "Frame %d: observed_landmark_ids.size() = %zu, enable_inter_landmark = %s",
+                frame->id, observed_landmark_ids.size(), 
+                config_.enable_inter_landmark_factors ? "true" : "false");
+    
+    // Log the actual landmark IDs
+    if (!observed_landmark_ids.empty()) {
+      std::stringstream ss;
+      ss << "Observed landmark IDs: ";
+      for (int id : observed_landmark_ids) {
+        ss << id << " ";
+      }
+      RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), "%s", ss.str().c_str());
     }
     
     // Create inter-landmark factors for co-observed confirmed landmarks
     if (config_.enable_inter_landmark_factors && observed_landmark_ids.size() >= 2) {
+      RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                  "Creating inter-landmark factors for %zu observed landmarks", 
+                  observed_landmark_ids.size());
       create_inter_landmark_factors(observed_landmark_ids, frame);
+    } else {
+      RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                  "NOT creating inter-landmark factors: enable=%s, num_observed=%zu (need >=2)",
+                  config_.enable_inter_landmark_factors ? "true" : "false",
+                  observed_landmark_ids.size());
     }
     
     // Create pattern-based factors
@@ -357,38 +428,91 @@ private:
    */
   void create_inter_landmark_factors(const std::vector<int>& landmark_ids,
                                     const EstimationFrame::Ptr& frame) {
+    RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                "=== create_inter_landmark_factors START ===");
+    RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                "Frame %d: Processing %zu landmark IDs", frame->id, landmark_ids.size());
+    
     // Skip if too few landmarks
-    if (landmark_ids.size() < 2) return;
+    if (landmark_ids.size() < 2) {
+      RCLCPP_WARN(rclcpp::get_logger("cone_mapping"), 
+                  "Too few landmarks (%zu), need at least 2", landmark_ids.size());
+      return;
+    }
+    
+    int pairs_checked = 0;
+    int co_observations_updated = 0;
+    int factors_created = 0;
     
     // Update co-observation tracking
     for (size_t i = 0; i < landmark_ids.size(); ++i) {
       for (size_t j = i + 1; j < landmark_ids.size(); ++j) {
         int id1 = landmark_ids[i];
         int id2 = landmark_ids[j];
+        pairs_checked++;
+        
+        RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
+                    "Checking pair: L%d - L%d", id1, id2);
         
         // Safety check
         if (landmarks_.find(id1) == landmarks_.end() || 
             landmarks_.find(id2) == landmarks_.end()) {
+          RCLCPP_WARN(rclcpp::get_logger("cone_mapping"), 
+                      "Landmark missing from map: L%d=%s, L%d=%s",
+                      id1, landmarks_.find(id1) != landmarks_.end() ? "exists" : "missing",
+                      id2, landmarks_.find(id2) != landmarks_.end() ? "exists" : "missing");
           continue;
         }
         
+        // Get co-observation count before update
+        int co_obs_before = landmarks_[id1]->co_observation_count(id2);
+        
         landmarks_[id1]->add_co_observed(id2);
         landmarks_[id2]->add_co_observed(id1);
+        co_observations_updated++;
+        
+        // Get co-observation count after update
+        int co_obs_after = landmarks_[id1]->co_observation_count(id2);
+        
+        RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                    "Updated co-observations for L%d-L%d: %d -> %d",
+                    id1, id2, co_obs_before, co_obs_after);
         
         // Create distance factor if cones are frequently co-observed
         if (should_create_inter_landmark_factor(id1, id2)) {
+          RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                      "should_create_inter_landmark_factor returned TRUE for L%d-L%d",
+                      id1, id2);
           create_distance_factor(id1, id2, frame);
+          factors_created++;
+        } else {
+          RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
+                      "should_create_inter_landmark_factor returned FALSE for L%d-L%d",
+                      id1, id2);
         }
       }
     }
+    
+    RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                "=== create_inter_landmark_factors END ===");
+    RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                "Summary: %d pairs checked, %d co-observations updated, %d factors created",
+                pairs_checked, co_observations_updated, factors_created);
   }
   
   /**
    * @brief Check if we should create factor between two landmarks
    */
   bool should_create_inter_landmark_factor(int id1, int id2) const {
+    RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
+                "=== should_create_inter_landmark_factor START for L%d-L%d ===", id1, id2);
+    
     // Safety check
     if (landmarks_.find(id1) == landmarks_.end() || landmarks_.find(id2) == landmarks_.end()) {
+      RCLCPP_WARN(rclcpp::get_logger("cone_mapping"), 
+                  "Landmark not found: L%d=%s, L%d=%s",
+                  id1, landmarks_.find(id1) != landmarks_.end() ? "exists" : "missing",
+                  id2, landmarks_.find(id2) != landmarks_.end() ? "exists" : "missing");
       return false;
     }
     
@@ -397,19 +521,42 @@ private:
     
     // Check if they've been co-observed enough times
     int co_obs_count = lm1->co_observation_count(id2);
+    RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                "L%d-L%d co-observation count: %d (threshold: %d)",
+                id1, id2, co_obs_count, static_cast<int>(config_.min_covisibility_count));
+    
     if (co_obs_count < config_.min_covisibility_count) {
+      RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                  "REJECT: Co-observation count %d < threshold %d",
+                  co_obs_count, static_cast<int>(config_.min_covisibility_count));
       return false;
     }
     
     // Check distance
     double distance = (lm1->position() - lm2->position()).norm();
-    if (distance < 0.1 || distance > config_.max_landmark_distance) {
+    RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                "L%d-L%d distance: %.3f m (valid range: 0.1 - %.1f m)",
+                id1, id2, distance, config_.max_landmark_distance);
+    
+    if (distance < 0.1) {
+      RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                  "REJECT: Distance %.3f < 0.1 m (too close)", distance);
+      return false;
+    }
+    
+    if (distance > config_.max_landmark_distance) {
+      RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                  "REJECT: Distance %.3f > %.1f m (too far)",
+                  distance, config_.max_landmark_distance);
       return false;
     }
     
     // Avoid creating duplicate factors
     // (In a real implementation, we'd track which factors have been created)
     
+    RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
+                "ACCEPT: Creating inter-landmark factor for L%d-L%d (co-obs: %d, dist: %.3f)",
+                id1, id2, co_obs_count, distance);
     return true;
   }
   
@@ -458,7 +605,7 @@ private:
       new_factors_.emplace_shared<ConeDistanceFactor>(
           landmark1_key, landmark2_key, measured_distance, distance_noise);
       
-      RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
+      RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
                   "Created inter-landmark factor between L%d and L%d (dist: %.2f)", 
                   id1, id2, measured_distance);
     } catch (const std::exception& e) {
@@ -595,10 +742,14 @@ private:
   int next_tentative_id_;
   int frames_since_optimization_;
   
+  // Track tentative to confirmed landmark mapping for current frame
+  std::unordered_map<int, int> tentative_to_landmark_;
+  
   /**
    * @brief Associate observation with tentative landmarks
+   * @return Tentative landmark ID if associated, -1 otherwise
    */
-  void associate_with_tentative_landmark(const ConeObservation& obs, const EstimationFrame::Ptr& frame) {
+  int associate_with_tentative_landmark(const ConeObservation& obs, const EstimationFrame::Ptr& frame) {
     // Transform observation to world frame
     Eigen::Vector2d world_pos = frame->transform_to_world(obs);
     
@@ -634,11 +785,14 @@ private:
     if (best_id >= 0) {
       // Add to existing tentative landmark
       tentative_landmarks_[best_id]->add_observation(landmark_obs);
+      return best_id;
     } else {
       // Create new tentative landmark
-      auto tentative = std::make_shared<TentativeLandmark>(next_tentative_id_++);
+      int new_id = next_tentative_id_++;
+      auto tentative = std::make_shared<TentativeLandmark>(new_id);
       tentative->add_observation(landmark_obs);
       tentative_landmarks_[tentative->get_id()] = tentative;
+      return new_id;
     }
   }
   
@@ -732,6 +886,9 @@ private:
         */ // END OF COMMENTED OUT SECTION
         
         promoted_ids.push_back(id);
+        
+        // Store mapping from tentative to confirmed for this frame
+        tentative_to_landmark_[id] = landmark_id;
         
         RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
                     "Promoted tentative landmark %d to confirmed landmark %d (color: %d, observations: %zu)", 
