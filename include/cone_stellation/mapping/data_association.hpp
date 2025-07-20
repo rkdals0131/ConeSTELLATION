@@ -25,8 +25,11 @@ public:
     double max_association_distance;  // Maximum distance for association
     bool use_color_constraint;       // Enforce color matching
     double gating_threshold;          // Chi-squared threshold for gating
+    double track_id_weight;          // Weight for track ID matching
+    bool use_track_id;               // Enable track ID in association
     
-    Config() : max_association_distance(2.0), use_color_constraint(true), gating_threshold(5.0) {}
+    Config() : max_association_distance(2.0), use_color_constraint(true), 
+               gating_threshold(5.0), track_id_weight(5.0), use_track_id(true) {}
   };
   
   DataAssociation(const Config& config = Config()) : config_(config) {}
@@ -52,7 +55,7 @@ public:
       const auto& obs = observations[obs_idx];
       
       int best_landmark_id = -1;
-      double best_distance = config_.max_association_distance;
+      double best_score = std::numeric_limits<double>::max();
       
       // Search through all landmarks
       for (const auto& [landmark_id, landmark] : landmarks) {
@@ -70,9 +73,22 @@ public:
         // Calculate distance
         double distance = (obs.position - landmark->position()).norm();
         
-        // Simple nearest neighbor
-        if (distance < best_distance) {
-          best_distance = distance;
+        // Skip if too far
+        if (distance > config_.max_association_distance) continue;
+        
+        // Calculate association score (lower is better)
+        double score = distance;
+        
+        // Track ID bonus (negative score for matching track IDs)
+        if (config_.use_track_id && obs.id >= 0 && landmark->track_id() >= 0) {
+          if (obs.id == landmark->track_id()) {
+            score -= config_.track_id_weight;  // Prioritize track ID matches
+          }
+        }
+        
+        // Update best match
+        if (score < best_score) {
+          best_score = score;
           best_landmark_id = landmark_id;
         }
       }
@@ -83,13 +99,14 @@ public:
         used_landmarks.insert(best_landmark_id);
         
         RCLCPP_DEBUG(rclcpp::get_logger("data_association"),
-                     "Associated observation %zu (%.2f, %.2f) color %d with landmark %d (%.2f, %.2f) color %d, dist %.2f",
-                     obs_idx, obs.position.x(), obs.position.y(), static_cast<int>(obs.color),
+                     "Associated obs %zu (%.2f,%.2f) track:%d color:%d with landmark %d (%.2f,%.2f) track:%d color:%d, score:%.2f",
+                     obs_idx, obs.position.x(), obs.position.y(), obs.id, static_cast<int>(obs.color),
                      best_landmark_id, 
                      landmarks.at(best_landmark_id)->position().x(),
                      landmarks.at(best_landmark_id)->position().y(),
+                     landmarks.at(best_landmark_id)->track_id(),
                      static_cast<int>(landmarks.at(best_landmark_id)->color()),
-                     best_distance);
+                     best_score);
       } else {
         RCLCPP_DEBUG(rclcpp::get_logger("data_association"),
                      "No association for observation %zu (%.2f, %.2f) color %d",

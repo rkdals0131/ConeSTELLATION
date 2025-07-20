@@ -433,3 +433,129 @@ No data association causing landmark duplication
 ### Result
 Build successful - ready for testing with proper data association
 
+
+## 2025-07-20 SLAM Issues Analysis
+
+**Problem**: Multiple SLAM system issues identified including noise handling, visualization, and drift correction
+**Analysis**: Comprehensive analysis of 5 major issues:
+1. False positive/negative cones due to lack of track ID utilization
+2. Path visualization missing pose node markers  
+3. Inter-landmark edges implemented but never created
+4. map->odom tf always identity (no drift correction)
+5. Observation edge endpoints misaligned with landmark markers
+
+**Root Cause**: System bypassing odometry estimation and using ground truth poses from TF, preventing drift calculation
+**Solution**: Created slam_issues_todolist.md with phased implementation plan:
+- Phase 1: Core fixes (drift correction, track ID, visualization)
+- Phase 2: Enhancements (pattern detection, path improvements)  
+- Phase 3: Robustness (hysteresis, loop closure, optimization)
+
+**Result**: Documented systematic approach to resolve each issue with code snippets and testing strategies
+EOF < /dev/null
+## 2025-07-20 Incremental SLAM Fixes
+
+**Problem**: Multiple SLAM issues preventing proper operation
+**Analysis**: Implemented fixes in order of difficulty
+
+### Fix 1: Enable Inter-Landmark Factors
+- Changed enable_inter_landmark_factors from false to true
+- Changed use_simple_mapping from false to use full ConeMapping
+- Inter-landmark distance factors should now be created for co-observed landmarks
+**Result**: Configuration updated, ready for testing
+
+### Fix 2: Add Track ID to Data Association  
+- Added track_id field to ConeLandmark class with scoring mechanism
+- Updated data association to prioritize track ID matches (weight: 5.0)
+- Modified ConeMapping to propagate track IDs when creating/updating landmarks
+- Track ID history maintained with primary track ID selection
+**Result**: Track-based association implemented, ready for testing
+
+### Next Steps
+- Remove odometry debugging bypass to enable actual SLAM
+- Implement drift correction mechanism
+- Test each fix incrementally
+EOF < /dev/null
+### Fix 3: Debug Inter-landmark Factor Crash
+**Problem**: Segmentation fault when inter-landmark factors enabled
+- Crash occurred during optimization with 131 new factors
+- Exit code -11 after "Running optimization" message
+
+**Analysis**: 
+- Inter-landmark factors created for landmarks not yet in GTSAM graph
+- Unsafe access to observation_to_landmark mapping
+- Too many factors created at once
+
+**Solution**:
+- Added comprehensive safety checks in create_distance_factor()
+- Use landmark positions instead of observation positions
+- Added try-catch blocks and better logging
+- Temporarily disabled inter-landmark factors to isolate issue
+- Keep full ConeMapping for track ID support
+
+**Result**: Inter-landmark factors disabled, ready to test track ID association
+EOF < /dev/null
+### Fix 4: Track ID Crash in ConeLandmark
+**Problem**: System still crashed with inter-landmark disabled
+- Crash during optimization with 42 factors
+
+**Analysis**:
+- Track ID update logic had bug when primary_track_id_ was -1
+- Accessing track_id_scores_[-1] caused undefined behavior
+- ConeMapping's tentative landmark system adding complexity
+
+**Solution**:
+- Fixed update_track_id() to handle negative IDs
+- Fixed set_track_id() to initialize score map
+- Switched to SimpleConeMapping for isolation testing
+
+**Result**: SimpleConeMapping works without crashes\!
+
+## 2025-07-20 ConeMapping Issue Identified
+
+**Problem**: ConeMapping crashes but SimpleConeMapping works
+**Analysis**: Issue isolated to ConeMapping's complexity:
+- TentativeLandmark system
+- ConeLandmark with track ID (new addition)
+- More complex data association
+
+**Next Steps**:
+1. Debug ConeMapping's tentative landmark promotion
+2. Check ConeLandmark initialization
+3. Re-enable ConeMapping with fixes
+4. Test Track ID functionality
+5. Finally enable inter-landmark factors
+EOF < /dev/null
+### Fix 5: ConeMapping Tentative Landmark Promotion
+**Problem**: ConeMapping crashed during optimization, SimpleConeMapping worked
+- promote_tentative_landmarks() tried to add factors from old frames
+
+**Analysis**:
+- Function tried to reference poses that may have been marginalized
+- ISAM2 doesn't keep all old poses, only recent ones
+- Creating factors with non-existent poses causes crash
+
+**Solution**:
+- Commented out the section that adds old observation factors
+- Now only creates landmark, adds prior if needed
+- Lets future observations naturally create factors
+- Much simpler and safer approach
+
+**Result**: ConeMapping re-enabled with fixes, ready for testing
+EOF < /dev/null
+### Fix 6: ConeMapping Stability Improvements
+**Problem**: Still crashing with 45 factors and 15 values
+
+**Analysis**:
+- ISAM2 parameters different from stable SimpleConeMapping
+- Too many factors accumulated before optimization
+- Possible numerical instability with Cholesky factorization
+
+**Solution**:
+- Changed to QR factorization (more stable than Cholesky)
+- Set evaluateNonlinearError to false
+- Optimize every frame instead of every 5 frames
+- Added null factor validation
+- Stricter tentative landmark requirements
+
+**Result**: Multiple stability improvements, ready for testing
+EOF < /dev/null

@@ -29,13 +29,13 @@ cone_slam:
       pattern_factor_noise: 0.05             # Pattern-based factor noise
       
       # Inter-landmark factor creation (KEY INNOVATION)
-      enable_inter_landmark_factors: false    # TEMPORARILY DISABLED FOR DEBUGGING
-      use_simple_mapping: true                 # Use SimpleConeMapping for debugging
+      enable_inter_landmark_factors: false    # Keep disabled for now
+      use_simple_mapping: false               # Use ConeMapping with fixes
       min_covisibility_count: 2              # Min times cones seen together
       max_landmark_distance: 10.0            # Max distance for inter-landmark factor
       
       # Optimization triggers
-      optimize_every_n_frames: 5            # Run optimization every N keyframes (reduced for debugging)
+      optimize_every_n_frames: 1            # Optimize after every keyframe for stability
       optimize_on_loop_closure: true         # Force optimization on loop closure
 
     # Keyframe selection
@@ -52,10 +52,10 @@ cone_slam:
       
     # Tentative landmark parameters (delayed addition)
     tentative_landmark:
-      min_observations: 3              # Minimum observations before promotion
-      min_time_span: 0.5              # Minimum time span in seconds
-      max_position_variance: 0.5       # Maximum position variance (m^2)
-      min_color_confidence: 0.6        # Minimum color voting confidence
+      min_observations: 5              # Increased for stability
+      min_time_span: 1.0              # Increased time requirement
+      max_position_variance: 0.3       # Stricter variance requirement
+      min_color_confidence: 0.7        # Higher color confidence
       max_observations: 20             # Maximum observations to store
       
     # Loop closure detection

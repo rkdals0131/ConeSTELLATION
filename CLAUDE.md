@@ -12,7 +12,7 @@ ConeSTELLATION (Cone-based STructural ELement Layout for Autonomous NavigaTION) 
 
 - **Created**: 2025-07-18
 - **Updated**: 2025-07-20
-- **Status**: Implementing cone-based odometry and data association
+- **Status**: Debugging ConeMapping crash - SimpleConeMapping works
 - **Architecture**: Based on GLIM's proven modular design with novel inter-landmark factors
 - **Latest Updates**: 
   - ✅ Topic unified to `/fused_sorted_cones_ukf_sim`
@@ -23,10 +23,14 @@ ConeSTELLATION (Cone-based STructural ELement Layout for Autonomous NavigaTION) 
   - ✅ Separated visualization to viewer module
   - ✅ Implemented cone-based odometry module
   - ✅ Fixed GTSAM type construction issues
-  - ❌ No data association - landmarks duplicated
-  - ❌ Blue cones appear intermittently
-  - ⏳ Need to implement proper data association
-  - ⏳ Need to test and debug odometry estimation
+  - ✅ Created comprehensive SLAM issues analysis (slam_issues_todolist.md)
+  - ✅ Validated all issues with GLIM comparison
+  - ✅ Added track ID support to ConeLandmark and data association
+  - ✅ SimpleConeMapping works without crashes
+  - ❌ ConeMapping crashes during optimization (tentative landmark issue)
+  - ❌ CRITICAL: Odometry bypassed - using ground truth (debugging mode)
+  - ❌ map->odom tf fixed (no drift correction)
+  - ⏳ Debugging ConeMapping to enable Track ID and inter-landmark factors
 
 ## Project Structure (Current)
 

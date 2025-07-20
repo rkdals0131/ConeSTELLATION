@@ -46,7 +46,7 @@ public:
   
   ConeLandmark(int id, const Eigen::Vector2d& position, ConeColor color)
     : id_(id), position_(position), color_(color), 
-      observations_(0), confidence_(1.0) {}
+      observations_(0), confidence_(1.0), primary_track_id_(-1) {}
   
   // Getters
   int id() const { return id_; }
@@ -78,6 +78,27 @@ public:
     return is_co_observed_with(cone_id) ? 1 : 0;
   }
 
+  // Track ID management
+  int track_id() const { return primary_track_id_; }
+  void set_track_id(int id) { 
+    if (id >= 0) {
+      primary_track_id_ = id;
+      track_id_scores_[id] = 1.0;  // Initialize score
+    }
+  }
+  void update_track_id(int id, float score = 1.0) {
+    if (id < 0) return;  // Ignore invalid track IDs
+    
+    track_id_scores_[id] += score;
+    
+    // Update primary track ID if this one has higher score
+    if (primary_track_id_ < 0 || 
+        track_id_scores_[id] > track_id_scores_[primary_track_id_]) {
+      primary_track_id_ = id;
+    }
+  }
+  const std::map<int, float>& track_id_history() const { return track_id_scores_; }
+
 private:
   int id_;                        // Unique landmark ID
   Eigen::Vector2d position_;      // Position in map frame
@@ -85,6 +106,8 @@ private:
   int observations_;              // Number of times observed
   double confidence_;             // Landmark confidence
   std::set<int> co_observed_cones_; // IDs of cones observed together
+  int primary_track_id_;          // Primary track ID from sensor
+  std::map<int, float> track_id_scores_; // Track ID observation history with scores
 };
 
 /**

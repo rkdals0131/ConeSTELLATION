@@ -72,8 +72,9 @@ public:
     params.relinearizeThreshold = config_.isam2_relinearize_threshold;
     params.relinearizeSkip = config_.isam2_relinearize_skip;
     params.enableRelinearization = true;
-    params.evaluateNonlinearError = true;
+    params.evaluateNonlinearError = false;  // Skip error evaluation for stability
     params.cacheLinearizedFactors = false;  // Don't cache to save memory
+    params.factorization = gtsam::ISAM2Params::QR;  // More stable than CHOLESKY
     params.findUnusedFactorSlots = true;   // Clean up unused factor slots
     isam2_ = std::make_shared<gtsam::ISAM2>(params);
   }
@@ -248,6 +249,7 @@ private:
         add_observation_factor(pose_key, landmark_id, obs);
         observed_landmark_ids.push_back(landmark_id);
         landmarks_[landmark_id]->increment_observations();
+        landmarks_[landmark_id]->update_track_id(obs.id);
         RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
                     "Associated observation %zu with landmark %d", i, landmark_id);
       } else {
@@ -258,6 +260,7 @@ private:
           Eigen::Vector2d world_pos = frame->transform_to_world(obs);
           int new_landmark_id = next_landmark_id_++;
           landmarks_[new_landmark_id] = std::make_shared<ConeLandmark>(new_landmark_id, world_pos, obs.color);
+          landmarks_[new_landmark_id]->set_track_id(obs.id);
           
           // Add to GTSAM
           gtsam::Symbol landmark_key('l', new_landmark_id);
@@ -354,11 +357,20 @@ private:
    */
   void create_inter_landmark_factors(const std::vector<int>& landmark_ids,
                                     const EstimationFrame::Ptr& frame) {
+    // Skip if too few landmarks
+    if (landmark_ids.size() < 2) return;
+    
     // Update co-observation tracking
     for (size_t i = 0; i < landmark_ids.size(); ++i) {
       for (size_t j = i + 1; j < landmark_ids.size(); ++j) {
         int id1 = landmark_ids[i];
         int id2 = landmark_ids[j];
+        
+        // Safety check
+        if (landmarks_.find(id1) == landmarks_.end() || 
+            landmarks_.find(id2) == landmarks_.end()) {
+          continue;
+        }
         
         landmarks_[id1]->add_co_observed(id2);
         landmarks_[id2]->add_co_observed(id1);
@@ -375,20 +387,28 @@ private:
    * @brief Check if we should create factor between two landmarks
    */
   bool should_create_inter_landmark_factor(int id1, int id2) const {
+    // Safety check
+    if (landmarks_.find(id1) == landmarks_.end() || landmarks_.find(id2) == landmarks_.end()) {
+      return false;
+    }
+    
     const auto& lm1 = landmarks_.at(id1);
     const auto& lm2 = landmarks_.at(id2);
     
-    // Check co-observation count
-    // In real implementation, track actual count
-    if (!lm1->is_co_observed_with(id2)) {
+    // Check if they've been co-observed enough times
+    int co_obs_count = lm1->co_observation_count(id2);
+    if (co_obs_count < config_.min_covisibility_count) {
       return false;
     }
     
     // Check distance
     double distance = (lm1->position() - lm2->position()).norm();
-    if (distance > config_.max_landmark_distance) {
+    if (distance < 0.1 || distance > config_.max_landmark_distance) {
       return false;
     }
+    
+    // Avoid creating duplicate factors
+    // (In a real implementation, we'd track which factors have been created)
     
     return true;
   }
@@ -397,39 +417,38 @@ private:
    * @brief Create distance factor between two landmarks
    */
   void create_distance_factor(int id1, int id2, const EstimationFrame::Ptr& frame) {
+    // Safety check: ensure landmarks exist
+    if (landmarks_.find(id1) == landmarks_.end() || landmarks_.find(id2) == landmarks_.end()) {
+      RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
+                  "Skipping inter-landmark factor - landmarks not in map");
+      return;
+    }
+    
     gtsam::Symbol landmark1_key('l', id1);
     gtsam::Symbol landmark2_key('l', id2);
     
-    // Calculate observed distance in current frame
-    const auto& obs_set = *frame->cone_observations;
-    Eigen::Vector2d pos1, pos2;
-    bool found1 = false, found2 = false;
-    
-    for (size_t i = 0; i < obs_set.cones.size(); i++) {
-      const auto& obs = obs_set.cones[i];
-      if (frame->observation_to_landmark.count(i) && 
-          frame->observation_to_landmark.at(i) == id1) {
-        pos1 = obs.position;
-        found1 = true;
-      }
-      if (frame->observation_to_landmark.count(i) && 
-          frame->observation_to_landmark.at(i) == id2) {
-        pos2 = obs.position;
-        found2 = true;
-      }
-    }
-    
-    if (found1 && found2) {
-      double measured_distance = (pos2 - pos1).norm();
-      
-      // Check if both landmarks exist in values
+    // Check if both landmarks exist in GTSAM values
+    try {
       auto current_estimate = isam2_->calculateEstimate();
       bool landmark1_exists = current_estimate.exists(landmark1_key) || initial_values_.exists(landmark1_key);
       bool landmark2_exists = current_estimate.exists(landmark2_key) || initial_values_.exists(landmark2_key);
       
       if (!landmark1_exists || !landmark2_exists) {
         RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
-                    "Skipping inter-landmark factor - landmarks not yet in graph");
+                    "Skipping inter-landmark factor - landmarks not yet in graph (L%d: %s, L%d: %s)",
+                    id1, landmark1_exists ? "yes" : "no", id2, landmark2_exists ? "yes" : "no");
+        return;
+      }
+      
+      // Use landmark positions instead of observations for more stable distance
+      const auto& lm1 = landmarks_.at(id1);
+      const auto& lm2 = landmarks_.at(id2);
+      double measured_distance = (lm1->position() - lm2->position()).norm();
+      
+      // Sanity check on distance
+      if (measured_distance < 0.1 || measured_distance > config_.max_landmark_distance) {
+        RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
+                    "Skipping inter-landmark factor - invalid distance %.2f", measured_distance);
         return;
       }
       
@@ -438,6 +457,13 @@ private:
       
       new_factors_.emplace_shared<ConeDistanceFactor>(
           landmark1_key, landmark2_key, measured_distance, distance_noise);
+      
+      RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
+                  "Created inter-landmark factor between L%d and L%d (dist: %.2f)", 
+                  id1, id2, measured_distance);
+    } catch (const std::exception& e) {
+      RCLCPP_WARN(rclcpp::get_logger("cone_mapping"), 
+                  "Exception creating inter-landmark factor: %s", e.what());
     }
   }
   
@@ -497,6 +523,23 @@ private:
       RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
                   "Factor graph details: %zu total factors in graph", 
                   isam2_->getFactorsUnsafe().size());
+      
+      // Validate factors before update
+      for (size_t i = 0; i < new_factors_.size(); ++i) {
+        if (!new_factors_[i]) {
+          RCLCPP_ERROR(rclcpp::get_logger("cone_mapping"), 
+                      "Null factor at index %zu", i);
+          new_factors_.erase(new_factors_.begin() + i);
+          --i;
+        }
+      }
+      
+      // Check for empty update
+      if (new_factors_.empty() && initial_values_.empty()) {
+        RCLCPP_WARN(rclcpp::get_logger("cone_mapping"), 
+                    "Empty update after validation");
+        return;
+      }
       
       // Perform ISAM2 update
       gtsam::ISAM2Result result = isam2_->update(new_factors_, initial_values_);
@@ -613,6 +656,7 @@ private:
         
         int landmark_id = next_landmark_id_++;
         landmarks_[landmark_id] = std::make_shared<ConeLandmark>(landmark_id, position, color);
+        landmarks_[landmark_id]->set_track_id(tentative->get_primary_track_id());
         
         // Add to GTSAM
         gtsam::Symbol landmark_key('l', landmark_id);
@@ -628,6 +672,11 @@ private:
                       "Added prior to landmark %d as anchor", landmark_id);
         }
         
+        // IMPORTANT: Skip adding old observation factors to avoid crashes
+        // Old frames may have been marginalized from ISAM2
+        // Let future observations create factors naturally
+        
+        /* COMMENTED OUT - This causes crashes when referencing old frames
         // Add observation factors from all frames that observed this tentative landmark
         auto observing_frames = tentative->get_observing_frames();
         int valid_observations = 0;
@@ -670,11 +719,17 @@ private:
         if (valid_observations == 0) {
           RCLCPP_WARN(rclcpp::get_logger("cone_mapping"), 
                       "Skipping landmark promotion - no valid observations in current graph");
-          initial_values_.erase(landmark_key);
-          landmarks_.erase(landmark_id);
+          // Clean up only if actually added
+          if (initial_values_.exists(landmark_key)) {
+            initial_values_.erase(landmark_key);
+          }
+          if (landmarks_.find(landmark_id) != landmarks_.end()) {
+            landmarks_.erase(landmark_id);
+          }
           next_landmark_id_--;
           continue;
         }
+        */ // END OF COMMENTED OUT SECTION
         
         promoted_ids.push_back(id);
         
