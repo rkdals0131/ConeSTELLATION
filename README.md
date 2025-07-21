@@ -67,11 +67,14 @@ graph LR
 
 ### ✅ Implemented
 - Basic factor graph SLAM with ISAM2
-- Inter-landmark factors (distance, line, angle)
+- Inter-landmark distance factors (fully working!)
 - Tentative landmark system with observation buffering
 - Color voting and track ID management
-- ROS2 node with visualization
-- Simulation environment
+- ROS2 node with comprehensive visualization
+- Simulation environment with dummy publisher
+- Drift correction (map→odom transform)
+- Cone-based odometry estimation
+- Track ID based data association
 
 ### 🚧 In Development (Priority Order)
 1. Fixed-lag smoother for bounded memory

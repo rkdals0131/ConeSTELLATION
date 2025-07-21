@@ -24,28 +24,30 @@ Following GLIM's approach, most implementations are header-only for:
 ## Current Status (2025-07-20)
 
 ### Recent Updates
-- **mapping/data_association.hpp**: ✅ NEW - Basic data association module
+- **cone.hpp**: ✅ FIXED - Co-observation tracking now properly counts observations
+  - Added co_observation_counts_ map for actual counting
+  - Fixed bug where co_observation_count() only returned 0 or 1
+- **mapping/**: ✅ Inter-landmark factors NOW WORKING!
+  - Distance factors created between co-observed landmarks
+  - Helps maintain track shape (especially curves)
+  - Visualization shows red lines for inter-landmark constraints
+- **data_association.hpp**: Basic data association module
   - Nearest neighbor matching with color constraints
-  - Configurable association distance threshold
-  - Foundation for preventing landmark duplication
-- **simple_cone_mapping.hpp**: Integrated data association
-  - No longer creates duplicate landmarks
-  - Associates observations to existing landmarks
-  - Limits new landmark creation per frame
-- **odometry/**: Implemented cone-based odometry modules
-  - cone_odometry_base.hpp: Abstract base class for odometry estimation
-  - cone_odometry_2d.hpp: 2D implementation using GTSAM factor graph
-  - async_cone_odometry.hpp: Asynchronous wrapper for real-time processing
-- **cone.hpp**: Fixed color definitions to match actual track layout (YELLOW=right, BLUE=left)
+  - Track ID support integrated
+- **odometry/**: Cone-based odometry modules
+  - cone_odometry_2d.hpp: 2D implementation using GTSAM
+  - async_cone_odometry.hpp: Asynchronous wrapper
 - **viewer/**: Separated visualization modules following GLIM architecture
+- **util/drift_correction_manager.hpp**: Calculates map->odom transform
 
-### Fixed Issues
-- ✅ **Critical**: Implemented cone-based odometry - no longer relies on TF
-- ✅ Data association preventing landmark duplication
-- ✅ Motion estimation from cone observations working
+### Current Architecture
+- Cone observations → Odometry estimation → Mapping with inter-landmark factors
+- Drift correction properly calculates map->odom transform
+- Real-time optimization with ISAM2
+- Track ID utilized for robust data association
 
 ### Next Steps
-- Build and test the integrated system with data association
-- Debug blue cone intermittent appearance issue
-- Fine-tune association parameters
-- Enable inter-landmark factors
+- Implement pattern detection (line, curve, parallel lines)
+- Add IMU/GPS integration for high-rate odometry
+- Implement loop closure detection
+- Performance optimization for larger maps

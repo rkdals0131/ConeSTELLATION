@@ -27,21 +27,33 @@ This directory contains implementation files for the cone_stellation SLAM system
 
 ### Recent Updates
 - **cone_slam_node.cpp**: 
-  - ✅ Integrated cone-based odometry module (AsyncConeOdometry)
-  - ✅ Fixed data flow: Cones → Odometry → Mapping
-  - ✅ Removed dependency on ground truth TF
-  - ✅ Added odometry publisher (/slam/odometry)
-  - ✅ Uses estimated poses from cone matching
-  - Added support for SimpleConeMapping mode
-  - Separated visualization to viewer module (SLAMVisualizer)
+  - ✅ Full SLAM pipeline working with inter-landmark factors
+  - ✅ Integrated DriftCorrectionManager for map->odom transform
+  - ✅ Uses cone-based odometry (AsyncConeOdometry)
+  - ✅ Real-time factor graph optimization
+  - ✅ Comprehensive visualization via SLAMVisualizer
+  - ✅ Track ID properly utilized in data association
+- **inter_landmark_factors.cpp**: 
+  - ✅ ConeDistanceFactor properly creates constraints between landmarks
+  - ✅ Co-observation tracking bug fixed (was returning binary values)
 
-### Fixed Issues
-- ✅ **Critical**: Now using cone-based odometry estimation
-- ✅ Data flow corrected to match GLIM architecture
-- ✅ No longer relies on external TF for pose estimation
+### Current System Flow
+1. Cone detections received → Preprocessing
+2. Odometry estimation from cone matching
+3. Data association with track ID support
+4. Mapping with inter-landmark factors
+5. ISAM2 optimization
+6. Drift correction updates map->odom transform
 
-### Next Steps
-- Build and test the complete system
-- Fine-tune odometry parameters
-- Enable inter-landmark factors
-- Add loop closure detection
+### Working Features
+- ✅ Real-time SLAM with cone landmarks
+- ✅ Inter-landmark distance constraints
+- ✅ Track ID based data association
+- ✅ Drift correction between odometry and SLAM
+- ✅ Comprehensive visualization (landmarks, factors, path)
+
+### Next Development Phase
+- Pattern detection for line/curve factors
+- IMU/GPS integration for high-rate control
+- Loop closure detection
+- Performance optimization for large-scale maps

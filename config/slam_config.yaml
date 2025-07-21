@@ -30,8 +30,8 @@ cone_slam:
       
       # Inter-landmark factor creation (KEY INNOVATION)
       enable_inter_landmark_factors: true     # Enable inter-landmark distance constraints
-      use_simple_mapping: false               # Use ConeMapping with fixes
-      min_covisibility_count: 1              # Min times cones seen together (reduced for testing)
+      use_simple_mapping: false               # Use ConeMapping with inter-landmark factors
+      min_covisibility_count: 2              # Min times cones seen together
       max_landmark_distance: 10.0            # Max distance for inter-landmark factor
       
       # Optimization triggers

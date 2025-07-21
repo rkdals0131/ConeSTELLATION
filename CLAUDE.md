@@ -31,21 +31,22 @@ ConeSTELLATION (Cone-based STructural ELement Layout for Autonomous NavigaTION) 
 
 - **Created**: 2025-07-18
 - **Updated**: 2025-07-20
-- **Status**: SLAM Working Well! Drift correction implemented!
+- **Status**: SLAM Working Well with Inter-landmark Factors!
 - **Architecture**: Based on GLIM's proven modular design with novel inter-landmark factors
 - **Latest Updates**: 
   - ✅ Data association working excellently with minimal overlapping landmarks
   - ✅ Noise filtering successfully blocks false positives/negatives
-  - ✅ Factor graph properly constructed with KF** pose nodes and observation edges
+  - ✅ Factor graph properly constructed with pose nodes and observation edges
   - ✅ Real-time backend optimization smoothly adjusting poses and map
   - ✅ Track ID properly utilized in data association
   - ✅ Clean visualization without orphan nodes
   - ✅ Odometry architecture decision made (IMU+GPS for control, SLAM for correction)
   - ✅ Drift correction implemented! map->odom transform now updates based on SLAM optimization
   - ✅ DriftCorrectionManager with pose interpolation (GLIM-inspired)
-  - ❌ Inter-landmark factors implemented but not yet enabled
-  - ❌ No loop closure (planned after IMU+GPS integration)
-  - ⏳ Next priorities: Odometry/mapping separation for 100Hz control, enable inter-landmark factors
+  - ✅ Inter-landmark factors NOW WORKING! Co-observation tracking fixed
+  - ✅ Circular track shapes better maintained with inter-landmark constraints
+  - ❌ No loop closure yet (planned after IMU+GPS integration)
+  - ⏳ Next priorities: Pattern detection for line/curve factors, IMU/GPS integration
 
 ## Project Structure (Current)
 

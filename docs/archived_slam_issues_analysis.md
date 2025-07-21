@@ -11,11 +11,13 @@ This document provides a detailed analysis of the current SLAM implementation is
 2. **Noise Filtering** - Successfully filters false positives/negatives
 3. **Factor Graph Construction** - Properly builds without orphan nodes
 4. **Real-time Optimization** - Backend optimization works smoothly
+5. **Drift Correction** - map->odom transform properly calculated via DriftCorrectionManager
+6. **Inter-landmark Factors** - NOW WORKING! Co-observation tracking bug fixed
 
 ### REMAINING Issues ❌
-1. **Drift Correction** - map->odom transform remains fixed at identity
-2. **High-rate Odometry** - Need separation for sensor-rate tracking
-3. **Inter-landmark Factors** - Implemented but not yet enabled
+1. **High-rate Odometry** - Need separation for sensor-rate tracking (currently using cone-based odometry)
+2. **Pattern Detection** - Line/curve pattern detection not implemented
+3. **Loop Closure** - Not yet implemented (planned after IMU+GPS integration)
 
 ## Issue 1: Noise Handling for False Positive/Negative Cones with Track IDs
 
