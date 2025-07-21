@@ -30,9 +30,10 @@ ConeSTELLATION (Cone-based STructural ELement Layout for Autonomous NavigaTION) 
 ## Current Status
 
 - **Created**: 2025-07-18
-- **Updated**: 2025-07-20
-- **Status**: SLAM Working Well with Inter-landmark Factors!
+- **Updated**: 2025-07-21 (하이브리드 아키텍처 상세 분석 완료)
+- **Status**: SLAM Working Well with Inter-landmark Factors! Architecture clarified.
 - **Architecture**: Based on GLIM's proven modular design with novel inter-landmark factors
+- **Key Decision**: Use external IMU+GPS odometry, SLAM for mapping only (like GLIM)
 - **Latest Updates**: 
   - ✅ Data association working excellently with minimal overlapping landmarks
   - ✅ Noise filtering successfully blocks false positives/negatives
@@ -45,8 +46,11 @@ ConeSTELLATION (Cone-based STructural ELement Layout for Autonomous NavigaTION) 
   - ✅ DriftCorrectionManager with pose interpolation (GLIM-inspired)
   - ✅ Inter-landmark factors NOW WORKING! Co-observation tracking fixed
   - ✅ Circular track shapes better maintained with inter-landmark constraints
-  - ❌ No loop closure yet (planned after IMU+GPS integration)
-  - ⏳ Next priorities: Pattern detection for line/curve factors, IMU/GPS integration
+  - ✅ 하이브리드 아키텍처 결정: 외부 EKF (100Hz) + SLAM 맵핑 (20Hz)
+  - ✅ map->odom 동적 보정의 작동 원리 이해 완료
+  - ⏸️ Fixed-lag smoother POSTPONED (랜드마크 SLAM에 부적합)
+  - ❌ Loop closure 미구현 (다음 우선순위)
+  - ⏳ 다음 목표: robot_localization EKF 구현, Loop closure, 메모리 관리
 
 ## Project Structure (Current)
 
@@ -98,7 +102,7 @@ cone_stellation/
 - **Phase 3**: Enable and tune inter-landmark factors
 - **Phase 4**: IMU/GPS integration for robust multi-sensor fusion
 - **Phase 5**: Loop closure with cone constellations
-- **Phase 6**: Fixed-lag smoother for bounded computation
+- **Phase 6**: ~~Fixed-lag smoother~~ POSTPONED - focus on loop closure instead
 
 ### GLIM Features Integration
 See `glim_features_integration.md` for detailed roadmap including:

@@ -7,40 +7,34 @@ This document provides a detailed integration plan for advanced SLAM features fr
 - ✅ Basic factor graph SLAM
 - ✅ Inter-landmark factors
 - ✅ Tentative landmark with basic color voting
-- ⚠️ Missing: Fixed-lag smoother, advanced optimization, loop closure
+- ⚠️ Missing: Loop closure, advanced optimization
 - ⚠️ Missing: Multi-threading, memory management, robust kernels
+- 📝 Note: Fixed-lag smoother POSTPONED (using external odometry)
 
 ## Priority 1: Core Performance Features (Must Have)
 
-### 1. Fixed-Lag Smoother Implementation
-**GLIM Reference**: `glim/src/glim/mapping/global_mapping.cpp` - IncrementalFixedLagSmootherExtWithFallback
+### 1. ~~Fixed-Lag Smoother Implementation~~ (POSTPONED)
+**Status**: POSTPONED based on GLIM architecture analysis (2025-07-21)
 
-**Implementation Plan**:
-```cpp
-class ConeFixedLagSmoother {
-  // Configuration
-  struct Config {
-    double lag_duration = 15.0;        // seconds
-    int max_keyframes = 100;           // maximum keyframes in window
-    bool use_fallback = true;          // enable fallback smoother
-    double marginalization_threshold;   // when to marginalize
-  };
-  
-  // Core functionality
-  void add_factors(const gtsam::NonlinearFactorGraph& new_factors);
+**Reasoning**:
+- GLIM uses fixed-lag smoother for IMU odometry estimation, NOT landmark SLAM
+- Since we have external IMU+GPS odometry at 100Hz, this is not needed
+- Landmark SLAM should remain unbounded for maximum accuracy
+- May revisit if memory becomes issue in very long operations
+
+**Alternative Approach**:
+- Use external odometry for real-time pose (100Hz)
+- SLAM focuses on mapping and drift correction only
+- Consider periodic landmark pruning if memory becomes an issue
   void marginalize_old_states();
-  gtsam::Values optimize();
-  
-private:
-  gtsam::IncrementalFixedLagSmoother smoother_;
-  std::deque<TimestampedKey> state_timestamps_;
+  // Implementation details removed - feature postponed
 };
 ```
 
-**Benefits**:
-- Bounded memory usage O(k) instead of O(n)
-- Consistent computation time
-- Preserves loop closure information through marginalization
+**Original Benefits** (for future reference):
+- Would provide bounded memory usage O(k) instead of O(n)
+- Would ensure consistent computation time
+- Would preserve loop closure information through marginalization
 
 ### 2. Multi-threaded Architecture
 **GLIM Reference**: `glim/src/glim/odometry/async_odometry_estimation.cpp`
@@ -273,7 +267,7 @@ profiles:
       
   race:
     optimization:
-      fixed_lag_window: 10.0  # seconds
+      # fixed_lag_window: 10.0  # POSTPONED - not needed with external odometry
       marginalize_old: true
     multi_threading:
       preprocessing_threads: 2
@@ -311,7 +305,7 @@ class ConeMapSerializer {
 ## Implementation Timeline
 
 ### Sprint 1 (2 weeks): Core Performance
-- [ ] Fixed-lag smoother integration
+- [ ] ~~Fixed-lag smoother integration~~ POSTPONED
 - [ ] Basic multi-threading (2 threads)
 - [ ] Huber robust kernels
 
@@ -350,7 +344,7 @@ class ConeMapSerializer {
 ## Testing Strategy
 
 1. **Unit Tests**:
-   - Fixed-lag smoother convergence
+   - ~~Fixed-lag smoother convergence~~ N/A
    - Thread safety verification
    - Memory leak detection
 

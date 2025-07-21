@@ -1,7 +1,13 @@
 # ConeSTELLATION Future Development TODO List
 
 ## Overview
-This document contains the prioritized list of features and improvements to be implemented in ConeSTELLATION. All listed items are NOT yet implemented as of 2025-07-20.
+This document contains the prioritized list of features and improvements to be implemented in ConeSTELLATION. All listed items are NOT yet implemented as of 2025-07-21.
+
+### Architecture Update (2025-07-21)
+Based on GLIM investigation, we've clarified our hybrid architecture:
+- **External Odometry**: IMU+GPS EKF at 100Hz (already available)
+- **SLAM**: Focus on landmark mapping and drift correction only
+- **Key Insight**: GLIM uses fixed-lag smoother for IMU odometry, not landmark SLAM
 
 ## Priority Levels
 - 🔴 **HIGH**: Critical for production use or significant performance improvement
@@ -12,14 +18,14 @@ This document contains the prioritized list of features and improvements to be i
 
 ## 🔴 HIGH Priority Tasks
 
-### 1. IMU/GPS Integration for High-Rate Odometry
-**Goal**: Separate control-rate odometry (100+ Hz) from SLAM optimization (10-30 Hz)
+### 1. External Odometry Integration (Clarified)
+**Goal**: Properly integrate with existing IMU+GPS EKF providing 100Hz odometry
 
 **Technical Details**:
-- Implement IMU preintegration factors following GTSAM's IMU factor model
-- Add GPS factors for global consistency (when available)
-- Create sensor fusion module combining wheel odometry, IMU, and GPS
-- Maintain dual odometry sources: high-rate for control, SLAM for accuracy
+- We already have external odometry at 100Hz from IMU+GPS EKF
+- SLAM should focus solely on landmark mapping and drift correction
+- No need to implement separate odometry in SLAM
+- Continue using DriftCorrectionManager to publish map->odom transform
 
 **Dependencies**: None (foundational feature)
 
@@ -46,18 +52,16 @@ This document contains the prioritized list of features and improvements to be i
 3. Add geometric verification using RANSAC
 4. Create loop closure factor and test convergence
 
-### 3. Fixed-Lag Smoother Implementation
-**Goal**: Bound memory usage for long-duration operation
+### 3. ~~Fixed-Lag Smoother Implementation~~ (POSTPONED)
+**Status**: Postponed based on GLIM architecture analysis
 
-**Technical Details**:
-- Replace unbounded ISAM2 with fixed-lag smoother
-- Maintain sliding window of recent poses and landmarks
-- Marginalize out old states properly
-- Keep key landmarks for loop closure
+**Reasoning**:
+- GLIM uses fixed-lag smoother ONLY for IMU odometry, not landmark SLAM
+- Since we have external odometry, this is not needed
+- Landmark SLAM should remain unbounded for maximum accuracy
+- May revisit if memory becomes an issue in very long operations
 
-**Dependencies**: Current ISAM2 optimization working well
-
-**Reference**: GTSAM's IncrementalFixedLagSmoother
+**Alternative**: Consider periodic landmark pruning if needed
 
 ---
 
@@ -181,7 +185,7 @@ graph TD
     B --> E[Loop Closure]
     C --> F[Advanced Factors]
     D --> G[Performance Opt]
-    E --> H[Fixed-Lag Smoother]
+    E --> H[Memory Management]
     H --> I[Serialization]
 ```
 

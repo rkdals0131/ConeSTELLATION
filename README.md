@@ -59,7 +59,7 @@ graph LR
 - 🔧 **Modular Architecture**: Based on GLIM's proven plugin system
 - ⚡ **Real-time Performance**: Multi-threaded processing pipeline (planned)
 - 🎯 **Robust Data Association**: Color voting, track ID hysteresis, observation buffering
-- 📊 **Advanced Optimization**: GTSAM with incremental fixed-lag smoother (planned)
+- 📊 **Advanced Optimization**: GTSAM with ISAM2 (incremental optimization)
 - 🔄 **Loop Closure**: Cone constellation descriptors for place recognition (planned)
 - 🤖 **ROS2 Native**: Full integration with ROS2 Humble
 
@@ -77,18 +77,18 @@ graph LR
 - Track ID based data association
 
 ### 🚧 In Development (Priority Order)
-1. Fixed-lag smoother for bounded memory
+1. Loop closure with cone constellations
 2. Multi-threading architecture  
 3. Robust kernels for outlier rejection
-4. Loop closure with cone constellations
-5. Odometry/mapping separation
-6. IMU/GPS integration
+4. Pattern detection for advanced factors
+5. Integration with external IMU/GPS odometry
+6. Keyframe pruning strategy (if needed for >1 hour runs)
 
 ### 📈 Performance Targets
 | Metric | Current | Target |
 |--------|---------|--------|
 | Update Rate | 10 Hz | 20+ Hz |
-| Memory Usage | Unbounded | < 1GB |
+| Memory Usage | ~200MB | < 1GB |
 | Loop Closure | 0% | > 90% |
 | Color Accuracy | ~85% | > 95% |
 
@@ -173,8 +173,8 @@ Main Thread          Preprocessing Thread     Mapping Thread
 ## 🤝 Contributing
 
 We welcome contributions! Key areas needing work:
-- Fixed-lag smoother implementation
 - Loop closure algorithms
+- Pattern detection (lines, curves)
 - GPU acceleration
 - Multi-vehicle coordination
 

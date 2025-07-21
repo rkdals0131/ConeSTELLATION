@@ -632,3 +632,45 @@ EOF < /dev/null
 - Temporarily reduced min_covisibility_count to 1 for testing
 
 **Result**: Inter-landmark factors should now be created when landmarks are co-observed
+
+## 2025-07-20 Late Evening - Inter-landmark Factors Successfully Working!
+**Issue**: Track geometry not preserved during optimization
+**Solution**: Fixed co-observation tracking and enabled inter-landmark factors
+**Result**: Circular cone tracks with inner and outer cones are now properly maintained during optimization! The inter-landmark factors effectively preserve the geometric structure while allowing necessary adjustments.
+
+---
+
+## [2025-07-21] Fixed-Lag Smoother Architecture Decision
+
+**Issue**: Initially planned to implement fixed-lag smoother for bounded memory usage in SLAM
+
+**Analysis**: 
+- Investigated GLIM architecture and found that fixed-lag smoother is used ONLY for IMU odometry estimation, not for landmark SLAM
+- GLIM keeps landmark SLAM unbounded for maximum accuracy
+- Our system already has external IMU+GPS EKF providing 100Hz odometry
+
+**Solution**: 
+- Focus SLAM solely on landmark mapping and drift correction
+- Rely on external odometry (IMU+GPS EKF) for high-rate pose estimates
+- Remove/postpone fixed-lag smoother implementation as it's not needed for our architecture
+
+**Result**: Clearer separation of concerns - external odometry handles real-time pose estimation, SLAM focuses on accurate mapping and drift correction. This matches GLIM's proven architecture pattern.
+
+## 2025-07-21 20:00 - 하이브리드 아키텍처 상세 분석
+**Problem**: 사용자가 하이브리드 접근법에 대한 혼란 표현 - SLAM이 EKF 출력을 모르는데 어떻게 drift 보정?
+
+**Analysis**:
+1. 주행 속도 수정: 최대 60km/h, 평균 30km/h (레이싱 아닌 일반 자율주행)
+2. 센서 주사율: IMU 100Hz, RTK GPS 8Hz, LiDAR cone 19-20Hz
+3. 핵심 혼란: SLAM이 EKF odometry를 입력받지 않는데 어떻게 map->odom 계산?
+
+**Solution**:
+1. map->odom은 **동적 보정값**이라는 개념 명확화
+2. SLAM은 tf를 통해 현재 odom->base_link를 간접적으로 인지
+3. 계산 방식: map->odom = (SLAM의 map->base_link) × inverse(EKF의 odom->base_link)
+4. 이를 통해 EKF의 drift를 실시간으로 보정
+
+**Result**: 
+- docs/architecture_decision_odometry_slam.md 한국어로 재작성
+- 하이브리드 아키텍처의 작동 원리 상세 설명
+- 다음 단계: robot_localization 패키지로 EKF 구현 예정

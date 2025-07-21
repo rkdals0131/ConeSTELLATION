@@ -251,15 +251,15 @@ struct ConeMap {
 - ✅ ROS2 토픽 구조 문서화
 
 #### 현재 이슈
-- ⚠️ Odometry와 Mapping이 분리되지 않아 실시간 성능 제한
+- ✅ Odometry와 Mapping 분리 완료 (external IMU+GPS odometry)
 - ⚠️ Sub-mapping 시스템 없음
 - ⚠️ 비동기 처리 미구현
 
-#### 우선순위 개발 계획
-1. **Phase 1: ConeOdometryEstimation 모듈 추가** (1주)
-   - Frame-to-frame cone matching
-   - Fast pose tracking at sensor rate
-   - IMU prediction integration ready
+#### 우선순위 개발 계획 (Updated 2025-07-21)
+1. **Phase 1: ~~ConeOdometryEstimation~~** (COMPLETED via external odometry)
+   - We use external IMU+GPS EKF for 100Hz odometry
+   - SLAM focuses on mapping and drift correction only
+   - DriftCorrectionManager handles map->odom transform
 
 2. **Phase 2: ConeSubMapping 모듈 추가** (1주)
    - Keyframe-based local mapping
@@ -276,20 +276,18 @@ struct ConeMap {
    - Factor marginalization
    - Memory management
 
-5. **Phase 5: Advanced Optimization with Fixed-Lag Smoother** (2주)
-   - **Fixed-Lag Smoother Implementation** (GLIM의 IncrementalFixedLagSmootherExtWithFallback 참조)
-     - Configurable lag window (10-20초 or 50-100 keyframes)
-     - Automatic marginalization of old states
-     - Information matrix preservation
-     - Fallback mechanism for numerical stability
-   - **Sliding Window Optimization**
-     - Bounded computational complexity O(k) where k = window size
-     - Smart marginalization strategy preserving loop constraints
-     - Memory-efficient landmark management
+5. **Phase 5: Advanced Optimization** (2주)
+   - **~~Fixed-Lag Smoother~~** (POSTPONED - GLIM uses this for IMU odometry only)
+     - Since we have external IMU+GPS odometry, not needed for landmark SLAM
+     - Landmark SLAM should remain unbounded for accuracy
    - **Robust Kernels** (GLIM 참조)
      - Huber/Tukey kernels for outlier rejection
      - Adaptive kernel parameter tuning
      - Cone-specific robust factors
+   - **Memory Management** (if needed)
+     - Periodic landmark pruning for very long operations
+     - Keep key landmarks for loop closure
+     - Monitor memory usage and implement strategies as needed
 
 6. **Phase 6: Loop Closure Detection and Correction** (3주)
    - **Cone Constellation Descriptor** 
@@ -475,7 +473,7 @@ struct ConeMap {
 4. **Basic Visualization** - 랜드마크, 팩터 그래프, 키프레임, 경로
 
 ### 아직 구현 안 된 주요 기능 ❌
-1. **Fixed-Lag Smoother** - 메모리 제한 O(k), 일정한 계산 시간
+1. **~~Fixed-Lag Smoother~~** - POSTPONED (external odometry handles this)
 2. **Loop Closure Detection** - 콘 constellation 기반
 3. **Multi-threading** - 비동기 처리 아키텍처
 4. **Robust Optimization** - Huber/Tukey 커널

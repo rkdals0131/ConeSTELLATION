@@ -1,6 +1,6 @@
 # ConeSTELLATION Current System Status
 
-## Last Updated: 2025-07-20
+## Last Updated: 2025-07-21
 
 ## ✅ Completed Features
 
@@ -31,10 +31,10 @@
 ## 🚧 Known Limitations
 
 1. **Single-threaded**: All processing in main thread
-2. **Unbounded Memory**: No fixed-lag smoother yet
-3. **No Loop Closure**: Drift accumulates over long trajectories
-4. **Limited Pattern Detection**: Only distance factors, no line/curve detection
-5. **No Multi-sensor Fusion**: Cone-only, no IMU/GPS integration
+2. **No Loop Closure**: Drift accumulates over long trajectories
+3. **Limited Pattern Detection**: Only distance factors, no line/curve detection
+4. **External Odometry Not Yet Integrated**: Placeholder for IMU/GPS EKF (100Hz)
+5. **Memory Management**: Need keyframe pruning for very long runs (>1 hour)
 
 ## 📊 Current Performance Metrics
 
@@ -43,7 +43,7 @@
 | Update Rate | ~10 Hz | With full optimization |
 | Landmarks | 60-80 | Typical test track |
 | Factors | 400-500 | After 1 minute |
-| Memory Usage | ~200 MB | Grows unbounded |
+| Memory Usage | ~200 MB | ISAM2 manages memory efficiently |
 | CPU Usage | ~40% | Single core |
 
 ## 🔗 Next Steps
