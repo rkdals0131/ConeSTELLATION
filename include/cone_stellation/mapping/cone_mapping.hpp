@@ -383,11 +383,21 @@ private:
     
     // Find nearest landmark of same color
     int best_id = -1;
-    double best_distance = 2.0; // Association threshold
+    double best_distance = config_.max_association_distance;
     
     for (const auto& [id, landmark] : landmarks_) {
-      if (landmark->color() != obs.color && obs.color != ConeColor::UNKNOWN) {
-        continue;
+      // Color matching logic:
+      // 1. If both have known colors, they must match exactly
+      // 2. If either is UNKNOWN, allow association
+      bool color_match = false;
+      if (landmark->color() == ConeColor::UNKNOWN || obs.color == ConeColor::UNKNOWN) {
+        color_match = true;  // Allow if either is unknown
+      } else if (landmark->color() == obs.color) {
+        color_match = true;  // Exact match
+      }
+      
+      if (!color_match) {
+        continue;  // Skip if colors don't match
       }
       
       double distance = (landmark->position() - world_pos).norm();

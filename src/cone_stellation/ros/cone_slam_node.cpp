@@ -149,6 +149,11 @@ private:
     mapping_config_.max_association_distance = 
         this->declare_parameter("association.max_association_distance", 2.0);
     
+    // Loop closure parameters (temporarily disabled)
+    // TODO: Re-enable when loop closure is properly integrated
+    mapping_config_.optimize_on_loop_closure = 
+        this->declare_parameter("mapping.optimize_on_loop_closure", false);
+    
     // Tentative landmark parameters
     TentativeLandmark::min_observations_ = 
         this->declare_parameter("tentative_landmark.min_observations", 3);

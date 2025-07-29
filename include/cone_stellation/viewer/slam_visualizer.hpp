@@ -126,7 +126,7 @@ public:
   }
   
   /**
-   * @brief Visualize factor graph structure
+   * @brief Visualize factor graph structure showing most recent factors
    */
   void visualizeFactorGraph(const gtsam::NonlinearFactorGraph& graph, 
                            const gtsam::Values& values) {
@@ -134,80 +134,96 @@ public:
     
     visualization_msgs::msg::MarkerArray markers;
     
-    // Delete all marker
-    visualization_msgs::msg::Marker delete_marker;
-    delete_marker.header.frame_id = "map";
-    delete_marker.header.stamp = node_->now();
-    delete_marker.ns = "factors";
-    delete_marker.action = visualization_msgs::msg::Marker::DELETEALL;
-    markers.markers.push_back(delete_marker);
+    // Limits for different factor types to prevent overload
+    const size_t max_observation_factors = 100;   // Most numerous, limit heavily
+    const size_t max_odometry_factors = 200;      // Show more odometry
+    const size_t max_inter_landmark_factors = 50; // Limit these
+    const size_t max_loop_closure_factors = 20;   // Show all loop closures if possible
     
-    int marker_id = 0;
+    // Store factors by type with their indices for reverse iteration
+    std::vector<std::pair<size_t, const gtsam::NonlinearFactor::shared_ptr*>> observation_factors;
+    std::vector<std::pair<size_t, const gtsam::NonlinearFactor::shared_ptr*>> odometry_factors;
+    std::vector<std::pair<size_t, const gtsam::NonlinearFactor::shared_ptr*>> inter_landmark_factors;
+    std::vector<std::pair<size_t, const gtsam::NonlinearFactor::shared_ptr*>> loop_closure_factors;
     
-    // Iterate through factors
+    // First pass: categorize all factors
+    size_t factor_index = 0;
     for (const auto& factor : graph) {
-      if (!factor) continue;
+      if (!factor) {
+        factor_index++;
+        continue;
+      }
       
-      visualization_msgs::msg::Marker line_marker;
-      line_marker.header.frame_id = "map";
-      line_marker.header.stamp = node_->now();
-      line_marker.ns = "factors";
-      line_marker.id = marker_id++;
-      line_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
-      line_marker.action = visualization_msgs::msg::Marker::ADD;
-      
-      // Get factor keys to determine type
       const auto& keys = factor->keys();
-      if (keys.size() < 2) continue;
+      if (keys.size() < 2) {
+        factor_index++;
+        continue;
+      }
       
-      // Determine factor type and set color/width accordingly
       char type1 = gtsam::Symbol(keys[0]).chr();
       char type2 = gtsam::Symbol(keys[1]).chr();
       
       if (type1 == 'x' && type2 == 'x') {
-        // Odometry factor (pose-to-pose) - thick green line
-        line_marker.color.r = 0.0;
-        line_marker.color.g = 1.0;
-        line_marker.color.b = 0.0;
-        line_marker.color.a = 0.8;
-        line_marker.scale.x = 0.05;
-        line_marker.ns = "odometry_factors";
+        // Check if this is a loop closure factor
+        int id1 = gtsam::Symbol(keys[0]).index();
+        int id2 = gtsam::Symbol(keys[1]).index();
+        bool is_loop_closure = std::abs(id2 - id1) > 5;
+        
+        if (is_loop_closure) {
+          loop_closure_factors.emplace_back(factor_index, &factor);
+        } else {
+          odometry_factors.emplace_back(factor_index, &factor);
+        }
       } else if ((type1 == 'x' && type2 == 'l') || (type1 == 'l' && type2 == 'x')) {
-        // Observation factor (pose-to-landmark) - thin blue line
-        line_marker.color.r = 0.0;
-        line_marker.color.g = 0.5;
-        line_marker.color.b = 1.0;
-        line_marker.color.a = 0.6;
-        line_marker.scale.x = 0.02;
-        line_marker.ns = "observation_factors";
+        observation_factors.emplace_back(factor_index, &factor);
       } else if (type1 == 'l' && type2 == 'l') {
-        // Inter-landmark factor - red dashed line
-        line_marker.color.r = 1.0;
-        line_marker.color.g = 0.0;
-        line_marker.color.b = 0.0;
-        line_marker.color.a = 0.8;
-        line_marker.scale.x = 0.03;
-        line_marker.ns = "inter_landmark_factors";
-      } else {
-        // Other factors - gray
-        line_marker.color.r = 0.5;
-        line_marker.color.g = 0.5;
-        line_marker.color.b = 0.5;
-        line_marker.color.a = 0.5;
-        line_marker.scale.x = 0.02;
+        inter_landmark_factors.emplace_back(factor_index, &factor);
       }
       
-      // Create line between factor nodes
+      factor_index++;
+    }
+    
+    // Delete all markers periodically
+    static auto last_delete_time = node_->now();
+    if ((node_->now() - last_delete_time).seconds() > 30.0) {
+      visualization_msgs::msg::Marker delete_marker;
+      delete_marker.header.frame_id = "map";
+      delete_marker.header.stamp = node_->now();
+      delete_marker.ns = "factors";
+      delete_marker.action = visualization_msgs::msg::Marker::DELETEALL;
+      markers.markers.push_back(delete_marker);
+      last_delete_time = node_->now();
+    }
+    
+    int marker_id = 0;
+    
+    // Lambda to visualize a single factor
+    auto visualize_factor = [&](const gtsam::NonlinearFactor::shared_ptr& factor, 
+                               const std::string& ns, 
+                               double r, double g, double b, double a,
+                               double scale, double lifetime) {
+      visualization_msgs::msg::Marker line_marker;
+      line_marker.header.frame_id = "map";
+      line_marker.header.stamp = node_->now();
+      line_marker.ns = ns;
+      line_marker.id = marker_id++;
+      line_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+      line_marker.action = visualization_msgs::msg::Marker::ADD;
+      line_marker.lifetime = rclcpp::Duration::from_seconds(lifetime);
+      
+      line_marker.color.r = r;
+      line_marker.color.g = g;
+      line_marker.color.b = b;
+      line_marker.color.a = a;
+      line_marker.scale.x = scale;
+      
+      const auto& keys = factor->keys();
       if (keys.size() == 2) {
         try {
           geometry_msgs::msg::Point p1, p2;
-          
-          // Try to get positions
           if (values.exists(keys[0]) && values.exists(keys[1])) {
-            // Extract positions from poses or landmarks
             extractPosition(values, keys[0], p1);
             extractPosition(values, keys[1], p2);
-            
             line_marker.points.push_back(p1);
             line_marker.points.push_back(p2);
             markers.markers.push_back(line_marker);
@@ -216,6 +232,58 @@ public:
           // Skip if values not available
         }
       }
+    };
+    
+    // Visualize most recent factors first (reverse iteration)
+    
+    // Observation factors - show last N
+    size_t obs_start = observation_factors.size() > max_observation_factors ? 
+                      observation_factors.size() - max_observation_factors : 0;
+    for (size_t i = obs_start; i < observation_factors.size(); ++i) {
+      visualize_factor(*observation_factors[i].second, "observation_factors",
+                      0.0, 0.5, 1.0, 0.6, 0.02, 5.0);
+    }
+    
+    // Odometry factors - show last N
+    size_t odom_start = odometry_factors.size() > max_odometry_factors ?
+                       odometry_factors.size() - max_odometry_factors : 0;
+    for (size_t i = odom_start; i < odometry_factors.size(); ++i) {
+      visualize_factor(*odometry_factors[i].second, "odometry_factors",
+                      0.0, 1.0, 0.0, 0.8, 0.05, 10.0);
+    }
+    
+    // Inter-landmark factors - show last N
+    size_t inter_start = inter_landmark_factors.size() > max_inter_landmark_factors ?
+                        inter_landmark_factors.size() - max_inter_landmark_factors : 0;
+    for (size_t i = inter_start; i < inter_landmark_factors.size(); ++i) {
+      visualize_factor(*inter_landmark_factors[i].second, "inter_landmark_factors",
+                      1.0, 0.0, 0.0, 0.8, 0.03, 30.0);
+    }
+    
+    // Loop closure factors - show last N (usually want to see all)
+    size_t loop_start = loop_closure_factors.size() > max_loop_closure_factors ?
+                       loop_closure_factors.size() - max_loop_closure_factors : 0;
+    for (size_t i = loop_start; i < loop_closure_factors.size(); ++i) {
+      visualize_factor(*loop_closure_factors[i].second, "loop_closure_factors",
+                      0.7, 0.0, 0.7, 0.9, 0.06, 60.0);
+    }
+    
+    // Log visualization stats periodically
+    static auto last_log_time = node_->now();
+    if ((node_->now() - last_log_time).seconds() > 5.0) {
+      size_t obs_shown = std::min(observation_factors.size(), max_observation_factors);
+      size_t odom_shown = std::min(odometry_factors.size(), max_odometry_factors);
+      size_t inter_shown = std::min(inter_landmark_factors.size(), max_inter_landmark_factors);
+      size_t loop_shown = std::min(loop_closure_factors.size(), max_loop_closure_factors);
+      
+      RCLCPP_INFO(node_->get_logger(), 
+                  "Factor visualization: %zu/%zu obs (total %zu), %zu/%zu odom (total %zu), "
+                  "%zu/%zu inter (total %zu), %zu/%zu loop (total %zu)",
+                  obs_shown, max_observation_factors, observation_factors.size(),
+                  odom_shown, max_odometry_factors, odometry_factors.size(),
+                  inter_shown, max_inter_landmark_factors, inter_landmark_factors.size(),
+                  loop_shown, max_loop_closure_factors, loop_closure_factors.size());
+      last_log_time = node_->now();
     }
     
     factor_pub_->publish(markers);

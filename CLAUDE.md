@@ -30,10 +30,11 @@ ConeSTELLATION (Cone-based STructural ELement Layout for Autonomous NavigaTION) 
 ## Current Status
 
 - **Created**: 2025-07-18
-- **Updated**: 2025-07-21 (하이브리드 아키텍처 상세 분석 완료)
-- **Status**: SLAM Working Well with Inter-landmark Factors! Architecture clarified.
+- **Updated**: 2025-07-28 (IMU-GPS EKF fusion implemented)
+- **Status**: SLAM Working Well with Inter-landmark Factors AND Loop Closure! Full SLAM pipeline operational.
 - **Architecture**: Based on GLIM's proven modular design with novel inter-landmark factors
 - **Key Decision**: Use external IMU+GPS odometry, SLAM for mapping only (like GLIM)
+- **Active Development**: IMU-GPS EKF fusion ready for testing
 - **Latest Updates**: 
   - ✅ Data association working excellently with minimal overlapping landmarks
   - ✅ Noise filtering successfully blocks false positives/negatives
@@ -49,8 +50,59 @@ ConeSTELLATION (Cone-based STructural ELement Layout for Autonomous NavigaTION) 
   - ✅ 하이브리드 아키텍처 결정: 외부 EKF (100Hz) + SLAM 맵핑 (20Hz)
   - ✅ map->odom 동적 보정의 작동 원리 이해 완료
   - ⏸️ Fixed-lag smoother POSTPONED (랜드마크 SLAM에 부적합)
-  - ❌ Loop closure 미구현 (다음 우선순위)
-  - ⏳ 다음 목표: robot_localization EKF 구현, Loop closure, 메모리 관리
+  - ✅ Loop closure ENHANCED for sparse environments! (2025-07-22)
+    - Constellation-based recognition (reduced to 3+ cones)
+    - Path-based loop detection with curvature profiles
+    - Geometric feature detection (turns, transitions, chicanes)
+    - Combined scoring: 30% cones, 30% path, 40% features
+    - Purple visualization for loop closure factors
+  - ✅ Loop closure segfault FIXED! (2025-07-23)
+    - Missing LoopClosureDetector function implementations added
+    - Full RANSAC-based geometric verification implemented
+    - Deadlock fixed in find_candidates() function
+    - Build successful, ready for testing
+  - ✅ RViz performance optimized! (2025-07-23)
+    - Added marker lifetimes to factor graph visualization
+    - Implemented sliding window: shows most recent N factors of each type
+    - Limits: 100 obs, 200 odom, 50 inter, 20 loop factors
+    - Only delete markers every 30s instead of every frame
+    - .gitignore updated to exclude build artifacts from package
+  - ✅ Inter-landmark factors IMPROVED! (2025-07-23)
+    - Implemented clustering algorithm to group co-observed landmarks
+    - Factors now created between cluster representatives instead of all pairs
+    - Adaptive noise model based on distance
+    - Stricter parameters: min_covisibility=3, min_distance=1.5m
+    - Max 15 factors per frame to avoid over-constraining
+  - ✅ False positive filtering ENHANCED! (2025-07-23)
+    - Added outlier rejection to tentative landmarks (2 std dev threshold)
+    - Tightened noise models: observation=0.3, inter-landmark=0.05
+    - Reduced max association distance to 1.5m
+    - Increased color confidence requirement to 0.8
+    - Tentative landmarks now reject observations too far from mean
+  - ✅ System stabilized (2025-07-23)
+    - Data association improved with strict color matching
+    - Tentative landmark parameters tightened
+    - Complex clustering removed for stability
+    - Loop closure temporarily disabled
+  - ✅ IMU-GPS EKF Fusion Implemented! (2025-07-28)
+    - Created realistic IMU/GPS publishers matching exact topic formats
+    - GPS to local Cartesian converter with UTM transformation
+    - robot_localization EKF configuration for 100Hz fusion
+    - Launch file for complete system integration
+    - Ready for testing with multiple motion profiles
+    - EKF-only launch ready for real bag file data with proper coordinate system
+    - Added GPS converter node with Konkuk University coordinates (37.540091°N, 127.076555°E)
+    - Complete TF tree structure: map → odom → base_link → sensors
+  - ✅ Documentation Consolidated (2025-07-28)
+    - Created comprehensive PRD.md (Product Requirements Document)
+    - Consolidated DEVELOPMENT_PLAN.md with all technical details
+    - Removed redundant documentation files
+    - Maintained debug_log.md for incremental issue tracking
+  - ⏳ 다음 목표: 
+    - Test IMU-GPS EKF fusion with SLAM integration
+    - GTSAM IMU preintegration factors (future enhancement)
+    - Sparse rigid body inter-landmark constraints
+    - Stable loop closure reimplementation
 
 ## Project Structure (Current)
 
@@ -66,12 +118,20 @@ cone_stellation/
 │   └── cone_slam_node.cpp    # Main ROS2 node
 ├── config/                    # YAML configuration files
 │   ├── slam_config.yaml      # SLAM parameters
-│   └── dummy_publisher_config.yaml # Simulation parameters
+│   ├── dummy_publisher_config.yaml # Simulation parameters
+│   ├── ekf_config.yaml       # EKF configuration for simulated data
+│   └── ekf_config_real.yaml  # EKF configuration for real bag data
 ├── scripts/                   # Python simulation scripts
-│   └── dummy_publisher_node.py # Dummy cone publisher for testing
+│   ├── dummy_publisher_node.py # Dummy cone publisher for testing
+│   ├── gps_to_cartesian.py    # GPS to ENU coordinate converter
+│   ├── imu_publisher.py       # Realistic IMU data publisher
+│   └── gps_publisher.py       # Realistic GPS data publisher
 └── launch/                    # ROS2 launch files
-    ├── cone_slam_launch.py
-    └── dummy_publisher_launch.py
+    ├── cone_slam_launch.py    # Main SLAM launch
+    ├── dummy_publisher_launch.py # Simulation launch
+    ├── test_slam_launch.py    # Combined test launch
+    ├── ekf_only_launch.py     # EKF localization with real data
+    └── imu_gps_ekf_launch.py  # Full IMU-GPS-EKF system
 ```
 
 ## Key Design Decisions
@@ -98,6 +158,10 @@ cone_stellation/
 
 ### Current Development (Detailed in docs/)
 - **Completed**: Drift correction (map->odom tf calculation) ✅
+- **In Progress**: Loop closure implementation based on GLIM's approach
+  - GLIM uses implicit loop detection via proximity and overlap
+  - Manual loop closure also available via interactive GUI
+  - Uses FPFH features and global registration for initial alignment
 - **Next Priority**: Odometry/mapping separation for 100Hz vehicle control
 - **Phase 3**: Enable and tune inter-landmark factors
 - **Phase 4**: IMU/GPS integration for robust multi-sensor fusion

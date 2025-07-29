@@ -210,8 +210,8 @@ private:
 // Initialize static members (should be done in cpp file)
 inline size_t TentativeLandmark::min_observations_ = 3;
 inline double TentativeLandmark::min_time_span_ = 0.5;  // seconds
-inline double TentativeLandmark::max_position_variance_ = 0.5;  // m^2
-inline double TentativeLandmark::min_color_confidence_ = 0.6;
-inline size_t TentativeLandmark::max_observations_ = 20;
+inline double TentativeLandmark::max_position_variance_ = 0.2;  // m^2 (stricter)
+inline double TentativeLandmark::min_color_confidence_ = 0.8;  // (higher)
+inline size_t TentativeLandmark::max_observations_ = 15;
 
 } // namespace cone_stellation
