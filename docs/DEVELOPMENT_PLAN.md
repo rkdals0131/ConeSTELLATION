@@ -27,9 +27,9 @@ ConeSTELLATION (Cone-based STructural ELement Layout for Autonomous NavigaTION) 
 ### ❌ Not Yet Implemented
 - GTSAM IMU preintegration factors
 - RTK GPS position factors with adaptive weighting
-- Robot localization EKF configuration
+- Robot localization EKF configuration (partial - simulation only)
 - Multi-threaded architecture
-- Production-ready loop closure
+- GLIM-inspired implicit loop closure (planned)
 
 ## 3. System Architecture
 
@@ -105,13 +105,24 @@ inter_landmark:
 
 ### 4.2 Loop Closure Implementation
 
-**Enhanced for Sparse Environments** (2025-07-22):
-- **Constellation-based**: Geometric patterns with 3+ cones
-- **Path-based**: Curvature profiles and traveled distance
-- **Feature Detection**: Turns, straights, chicanes
-- **Combined Scoring**: 30% cones, 30% path, 40% features
+**Current Status** (2025-07-28):
+- **Previous Approach Failed**: Complex descriptor-based system proved unstable
+- **Issues**: Memory leaks, race conditions, poor performance in sparse environments
+- **Decision**: Replace with GLIM-inspired implicit loop closure
 
-**Visualization**: Purple lines for loop closure factors
+**New Approach - GLIM-Inspired Implicit Loop Closure**:
+- **No Descriptors**: Spatial proximity and overlap-based detection
+- **Submap Concept**: Group keyframes into local submaps
+- **Simple Matching**: Distance threshold + landmark overlap
+- **Geometric Validation**: Ensure consistent relative geometry
+- **Robust Integration**: Huber kernel for outlier rejection
+
+**Implementation Plan**:
+- Phase 1: Basic submap generation and overlap detection (2 weeks)
+- Phase 2: Geometric consistency and robustness (2 weeks)
+- Phase 3: Optimization and memory management (1 week)
+
+**Details**: See [glim_inspired_loop_closure.md](glim_inspired_loop_closure.md)
 
 ### 4.3 IMU-GPS Integration (Current Focus)
 
@@ -152,9 +163,10 @@ inter_landmark:
 - ✅ Track ID utilization
 
 **Planned:**
-- ⏳ Sparse rigid body constraints
-- ⏳ Pattern-based loop detection
-- ⏳ Cone constellation matching
+- ⏳ GLIM-inspired implicit loop closure
+- ⏳ Submap-based mapping architecture
+- ⏳ Spatial indexing with KD-trees
+- ⏳ Geometric consistency validation
 
 ## 6. Development Phases
 
@@ -172,8 +184,9 @@ inter_landmark:
 
 ### Phase 3: Advanced Features (Current)
 - ✅ Inter-landmark factors
-- ✅ Enhanced loop closure
+- ❌ Enhanced loop closure (failed - to be replaced)
 - 🚧 IMU-GPS integration
+- 🚧 GLIM-inspired implicit loop closure (new approach)
 - ⏳ Multi-threading
 
 ### Phase 4: Production Ready
@@ -224,5 +237,7 @@ inter_landmark:
 ## 10. References
 
 - GLIM architecture: `/home/user1/ROS2_Workspace/GLIM_ws/src/glim/`
-- Original development inspired by: GLIM paper and codebase
+- GLIM paper: "GLIM: 3D Range-Inertial Localization and Mapping with GPU-Accelerated Scan Matching Factors"
+- Implicit Loop Closure Design: [glim_inspired_loop_closure.md](glim_inspired_loop_closure.md)
+- Critical Issues Analysis: [critical-issues.md](critical-issues.md)
 - Formula Student rules and track specifications

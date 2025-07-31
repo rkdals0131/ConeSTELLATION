@@ -416,3 +416,42 @@ ros2 launch cone_stellation imu_gps_ekf_launch.py motion_type:=figure8 radius:=3
 ```
 
 ### 상태: ✅ 구현 완료, 테스트 준비 완료
+
+## 2025-07-28: GLIM-Inspired Loop Closure 재설계
+
+### 분석 완료:
+1. **GLIM 루프클로저 철학 분석**
+   - Implicit loop closure: 명시적 descriptor 없음
+   - 거리 + 오버랩 기반 검출
+   - 서브맵 간 registration factors
+   - 검증된 실전 성능
+
+2. **기존 접근법의 문제점 확인**
+   - Constellation descriptor가 sparse 환경에서 실패
+   - 메모리 누수 (keyframe_database 무한 증가)
+   - Race condition (멀티스레드 동기화 문제)
+   - 과도한 복잡성으로 인한 유지보수 어려움
+
+3. **새로운 설계 완료**
+   - ConeSubmap 개념 도입 (10 keyframes = 1 submap)
+   - 공간 인덱싱 (KD-tree) 기반 효율적 검색
+   - 기하학적 일관성 검증으로 false positive 방지
+   - Circular buffer로 메모리 제한 (최대 100 submaps)
+
+### 구현 계획:
+- **Phase 1 (2주)**: 기본 구현 - 서브맵 생성, 오버랩 검출
+- **Phase 2 (2주)**: 강건성 개선 - 기하학적 검증, adaptive parameters
+- **Phase 3 (1주)**: 최적화 - KD-tree, 병렬화, 메모리 관리
+
+### 문서화:
+- glim_inspired_loop_closure.md 작성 완료
+- DEVELOPMENT_PLAN.md 업데이트 완료
+- 상세 알고리즘 및 구현 가이드 포함
+
+### 기대 효과:
+- 단순성: 복잡한 descriptor 제거
+- 강건성: 기하학적 검증으로 신뢰도 향상
+- 효율성: O(1) 검색, 제한된 메모리 사용
+- 확장성: sparse/dense 환경 모두 대응
+
+### 상태: ✅ 설계 완료, 구현 대기 중

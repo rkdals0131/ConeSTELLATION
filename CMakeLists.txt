@@ -96,13 +96,16 @@ install(DIRECTORY include/
   DESTINATION include
 )
 
+install(DIRECTORY
+  config
+  launch
+  DESTINATION share/${PROJECT_NAME}
+)
+
 # Install Python scripts
 install(PROGRAMS
   scripts/dummy_publisher_node.py
   scripts/imu_gps_publishers.py
-  scripts/gps_vis/gps_to_cartesian.py
-  scripts/gps_vis/gps_vis_node.py
-  scripts/gps_vis/fixed_gps_publisher.py
   scripts/sensor_simulator.py
   scripts/sensor_simulator_enhanced.py
   scripts/motion_controller.py
@@ -114,42 +117,5 @@ install(PROGRAMS
   scripts/tests/check_topics.py
   DESTINATION lib/${PROJECT_NAME}
 )
-
-# Install launch files
-install(DIRECTORY
-  launch
-  DESTINATION share/${PROJECT_NAME}
-)
-
-# Install config files
-install(DIRECTORY
-  config
-  DESTINATION share/${PROJECT_NAME}
-)
-
-# Install RViz config files
-install(DIRECTORY
-  rviz
-  DESTINATION share/${PROJECT_NAME}
-)
-
-# Testing
-if(BUILD_TESTING)
-  find_package(ament_cmake_gtest REQUIRED)
-  
-  # Unit tests for inter-landmark factors (commented out until test file is created)
-  # ament_add_gtest(test_inter_landmark_factors
-  #   test/test_inter_landmark_factors.cpp
-  # )
-  # target_link_libraries(test_inter_landmark_factors
-  #   ${PROJECT_NAME}_core
-  #   gtsam
-  #   ${Boost_LIBRARIES}
-  # )
-  # ament_target_dependencies(test_inter_landmark_factors
-  #   std_msgs
-  #   geometry_msgs
-  # )
-endif()
 
 ament_package()
