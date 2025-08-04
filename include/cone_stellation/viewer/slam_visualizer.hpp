@@ -35,11 +35,16 @@ public:
   }
   
   bool initialize() override {
-    // Create publishers
-    landmark_pub_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("/slam/landmarks", 10);
-    factor_pub_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("/slam/factor_graph", 10);
-    keyframe_pub_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("/slam/keyframes", 10);
-    path_pub_ = node_->create_publisher<nav_msgs::msg::Path>("/slam/path", 10);
+    // Create publishers with volatile QoS for real-time visualization
+    rclcpp::QoS viz_qos(10);
+    viz_qos.reliability(rclcpp::ReliabilityPolicy::BestEffort);
+    viz_qos.durability(rclcpp::DurabilityPolicy::Volatile);
+    viz_qos.history(rclcpp::HistoryPolicy::KeepLast);
+    
+    landmark_pub_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("/slam/landmarks", viz_qos);
+    factor_pub_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("/slam/factor_graph", viz_qos);
+    keyframe_pub_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("/slam/keyframes", viz_qos);
+    path_pub_ = node_->create_publisher<nav_msgs::msg::Path>("/slam/path", viz_qos);
     
     initialized_ = true;
     return true;
@@ -64,16 +69,22 @@ public:
   
   /**
    * @brief Visualize cone landmarks from mapping
+   * @param landmarks Map of landmark ID to landmark pointer
+   * @param timestamp Optional timestamp for markers (uses current time if not provided)
    */
-  void visualizeLandmarks(const std::unordered_map<int, ConeLandmark::Ptr>& landmarks) {
+  void visualizeLandmarks(const std::unordered_map<int, ConeLandmark::Ptr>& landmarks,
+                         const rclcpp::Time& timestamp = rclcpp::Time()) {
     std::lock_guard<std::mutex> lock(mutex_);
     
     visualization_msgs::msg::MarkerArray markers;
     
+    // Use provided timestamp or current time
+    rclcpp::Time marker_time = timestamp.nanoseconds() > 0 ? timestamp : node_->now();
+    
     // Delete all marker
     visualization_msgs::msg::Marker delete_marker;
     delete_marker.header.frame_id = "map";
-    delete_marker.header.stamp = node_->now();
+    delete_marker.header.stamp = marker_time;
     delete_marker.ns = "cone_landmarks";
     delete_marker.action = visualization_msgs::msg::Marker::DELETEALL;
     markers.markers.push_back(delete_marker);
@@ -82,7 +93,7 @@ public:
     for (const auto& [id, landmark] : landmarks) {
       visualization_msgs::msg::Marker marker;
       marker.header.frame_id = "map";
-      marker.header.stamp = node_->now();
+      marker.header.stamp = marker_time;
       marker.ns = "cone_landmarks";
       marker.id = id;
       marker.type = visualization_msgs::msg::Marker::CYLINDER;
@@ -127,9 +138,13 @@ public:
   
   /**
    * @brief Visualize factor graph structure showing most recent factors
+   * @param graph GTSAM factor graph
+   * @param values Current estimates
+   * @param timestamp Optional timestamp for markers
    */
   void visualizeFactorGraph(const gtsam::NonlinearFactorGraph& graph, 
-                           const gtsam::Values& values) {
+                           const gtsam::Values& values,
+                           const rclcpp::Time& timestamp = rclcpp::Time()) {
     std::lock_guard<std::mutex> lock(mutex_);
     
     visualization_msgs::msg::MarkerArray markers;
@@ -188,7 +203,7 @@ public:
     if ((node_->now() - last_delete_time).seconds() > 30.0) {
       visualization_msgs::msg::Marker delete_marker;
       delete_marker.header.frame_id = "map";
-      delete_marker.header.stamp = node_->now();
+      delete_marker.header.stamp = timestamp.nanoseconds() > 0 ? timestamp : node_->now();
       delete_marker.ns = "factors";
       delete_marker.action = visualization_msgs::msg::Marker::DELETEALL;
       markers.markers.push_back(delete_marker);
@@ -204,7 +219,7 @@ public:
                                double scale, double lifetime) {
       visualization_msgs::msg::Marker line_marker;
       line_marker.header.frame_id = "map";
-      line_marker.header.stamp = node_->now();
+      line_marker.header.stamp = timestamp.nanoseconds() > 0 ? timestamp : node_->now();
       line_marker.ns = ns;
       line_marker.id = marker_id++;
       line_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
@@ -291,16 +306,22 @@ public:
   
   /**
    * @brief Visualize keyframe poses
+   * @param keyframe_poses Map of keyframe ID to pose
+   * @param timestamp Optional timestamp for markers
    */
-  void visualizeKeyframes(const std::unordered_map<int, gtsam::Pose2>& keyframe_poses) {
+  void visualizeKeyframes(const std::unordered_map<int, gtsam::Pose2>& keyframe_poses,
+                         const rclcpp::Time& timestamp = rclcpp::Time()) {
     std::lock_guard<std::mutex> lock(mutex_);
     
     visualization_msgs::msg::MarkerArray markers;
     
+    // Use provided timestamp or current time
+    rclcpp::Time marker_time = timestamp.nanoseconds() > 0 ? timestamp : node_->now();
+    
     // Delete all marker
     visualization_msgs::msg::Marker delete_marker;
     delete_marker.header.frame_id = "map";
-    delete_marker.header.stamp = node_->now();
+    delete_marker.header.stamp = marker_time;
     delete_marker.ns = "keyframes";
     delete_marker.action = visualization_msgs::msg::Marker::DELETEALL;
     markers.markers.push_back(delete_marker);
@@ -310,7 +331,7 @@ public:
       // Create arrow marker for pose
       visualization_msgs::msg::Marker arrow;
       arrow.header.frame_id = "map";
-      arrow.header.stamp = node_->now();
+      arrow.header.stamp = marker_time;
       arrow.ns = "keyframes";
       arrow.id = id;
       arrow.type = visualization_msgs::msg::Marker::ARROW;

@@ -26,7 +26,7 @@ namespace cone_stellation {
 class ConeSLAMNode : public rclcpp::Node {
 public:
   ConeSLAMNode() 
-    : Node("cone_slam"), 
+    : Node("cone_slam", rclcpp::NodeOptions().use_intra_process_comms(false)), 
       tf_buffer_(this->get_clock()),
       tf_listener_(tf_buffer_),
       tf_broadcaster_(this) {
@@ -74,12 +74,21 @@ public:
       use_simple_mapping_ = false;
     }
     
-    // Subscribers
+    // Subscribers with QoS settings
+    rclcpp::QoS cone_qos(10);
+    cone_qos.reliability(rclcpp::ReliabilityPolicy::BestEffort);
+    cone_qos.durability(rclcpp::DurabilityPolicy::Volatile);
+    
     cone_sub_ = this->create_subscription<custom_interface::msg::TrackedConeArray>(
-        "/fused_sorted_cones_ukf_sim", 10,
+        "/fused_sorted_cones_ukf_map", cone_qos,
         std::bind(&ConeSLAMNode::cone_callback, this, std::placeholders::_1));
+    
+    rclcpp::QoS odom_qos(100);
+    odom_qos.reliability(rclcpp::ReliabilityPolicy::BestEffort);
+    odom_qos.durability(rclcpp::DurabilityPolicy::Volatile);
+    
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-        "/odom", 100,
+        "/odometry/filtered", odom_qos,
         std::bind(&ConeSLAMNode::odom_callback, this, std::placeholders::_1));
     
     // Initialize visualizer
@@ -89,11 +98,15 @@ public:
     // Initialize drift correction manager
     drift_manager_ = std::make_shared<DriftCorrectionManager>();
     
-    // Publishers
-    pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/slam/pose", 10);
-    odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/slam/odometry", 10);
+    // Publishers with best effort QoS for real-time performance
+    rclcpp::QoS pub_qos(10);
+    pub_qos.reliability(rclcpp::ReliabilityPolicy::BestEffort);
+    pub_qos.durability(rclcpp::DurabilityPolicy::Volatile);
     
-    // Timers
+    pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/slam/pose", pub_qos);
+    odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/slam/odometry", pub_qos);
+    
+    // Timers - use regular timer instead of wall timer for sim time compatibility
     visualization_timer_ = this->create_wall_timer(
         std::chrono::milliseconds(100),
         std::bind(&ConeSLAMNode::visualization_callback, this));
@@ -108,6 +121,17 @@ public:
     map_to_odom.transform.translation.z = 0.0;
     map_to_odom.transform.rotation.w = 1.0;
     tf_broadcaster_.sendTransform(map_to_odom);
+    
+    // Also publish initial base_link_slam transform (identity from base_link)
+    geometry_msgs::msg::TransformStamped base_slam_tf;
+    base_slam_tf.header.stamp = this->now();
+    base_slam_tf.header.frame_id = "base_link";
+    base_slam_tf.child_frame_id = "base_link_slam";
+    base_slam_tf.transform.translation.x = 0.0;
+    base_slam_tf.transform.translation.y = 0.0;
+    base_slam_tf.transform.translation.z = 0.0;
+    base_slam_tf.transform.rotation.w = 1.0;
+    tf_broadcaster_.sendTransform(base_slam_tf);
     
     // Initialize path message header
     slam_path_.header.frame_id = "map";
@@ -177,29 +201,28 @@ private:
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
                          "Received cone detection with %zu cones", msg->cones.size());
     
-    // TEMPORARY: Skip odometry for debugging
-    if (true) {
-      // Get current robot pose from TF (ground truth for debugging)
-      geometry_msgs::msg::TransformStamped transform;
-      try {
-        transform = tf_buffer_.lookupTransform("odom", "base_link", 
-                                             tf2::TimePointZero);
-      } catch (tf2::TransformException& ex) {
-        RCLCPP_WARN(this->get_logger(), "Could not get transform: %s", ex.what());
-        return;
-      }
-      
-      // Convert to Eigen
-      Eigen::Isometry3d sensor_pose = Eigen::Isometry3d::Identity();
-      sensor_pose.translation() = Eigen::Vector3d(
-          transform.transform.translation.x,
-          transform.transform.translation.y,
-          transform.transform.translation.z);
-      sensor_pose.rotate(Eigen::Quaterniond(
-          transform.transform.rotation.w,
-          transform.transform.rotation.x,
-          transform.transform.rotation.y,
-          transform.transform.rotation.z));
+    // Use odometry data instead of TF lookup
+    if (last_odom_.header.stamp.sec == 0) {
+      RCLCPP_WARN(this->get_logger(), "No odometry data available yet");
+      return;
+    }
+    
+    RCLCPP_DEBUG(this->get_logger(), "Using odometry pose: x=%.2f, y=%.2f, z=%.2f",
+                 last_odom_.pose.pose.position.x,
+                 last_odom_.pose.pose.position.y,
+                 last_odom_.pose.pose.position.z);
+    
+    // Get current robot pose from odometry
+    Eigen::Isometry3d sensor_pose = Eigen::Isometry3d::Identity();
+    sensor_pose.translation() = Eigen::Vector3d(
+        last_odom_.pose.pose.position.x,
+        last_odom_.pose.pose.position.y,
+        last_odom_.pose.pose.position.z);
+    sensor_pose.rotate(Eigen::Quaterniond(
+        last_odom_.pose.pose.orientation.w,
+        last_odom_.pose.pose.orientation.x,
+        last_odom_.pose.pose.orientation.y,
+        last_odom_.pose.pose.orientation.z));
       
       // Convert ROS message to internal format
       auto observations = from_ros_msg(*msg);
@@ -209,7 +232,10 @@ private:
                                             rclcpp::Time(msg->header.stamp).seconds());
       
       // Check if this should be a keyframe
-      if (should_create_keyframe(sensor_pose)) {
+      bool is_keyframe = should_create_keyframe(sensor_pose);
+      RCLCPP_INFO(this->get_logger(), "Should create keyframe: %s", is_keyframe ? "YES" : "NO");
+      
+      if (is_keyframe) {
         // Create estimation frame for mapping
         auto frame = std::make_shared<EstimationFrame>();
         frame->timestamp = rclcpp::Time(msg->header.stamp).seconds();
@@ -231,10 +257,6 @@ private:
       }
       
       last_keyframe_pose_ = sensor_pose;
-      
-      // Store odometry pose for drift correction
-      double timestamp = rclcpp::Time(msg->header.stamp).seconds();
-      drift_manager_->add_odometry_pose(timestamp, sensor_pose);
       
       // Add to path
       geometry_msgs::msg::PoseStamped path_pose;
@@ -263,34 +285,60 @@ private:
                       cone.position.x(), cone.position.y(), static_cast<int>(cone.color));
         }
       }
-      return; // TEMPORARY: Skip odometry processing
-    }
-    
-    // Original odometry code (temporarily disabled)
-    // ...
   }
   
   void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg) {
     // Store odometry for motion model
     last_odom_ = *msg;
+    
+    // Convert odometry to Eigen transform
+    Eigen::Isometry3d T_odom_base = Eigen::Isometry3d::Identity();
+    T_odom_base.translation() = Eigen::Vector3d(
+        msg->pose.pose.position.x,
+        msg->pose.pose.position.y,
+        msg->pose.pose.position.z);
+    T_odom_base.rotate(Eigen::Quaterniond(
+        msg->pose.pose.orientation.w,
+        msg->pose.pose.orientation.x,
+        msg->pose.pose.orientation.y,
+        msg->pose.pose.orientation.z));
+    
+    // Add to drift correction manager
+    double timestamp = rclcpp::Time(msg->header.stamp).seconds();
+    drift_manager_->add_odometry_pose(timestamp, T_odom_base);
+    
+    RCLCPP_DEBUG(this->get_logger(), "Added odometry pose to drift manager at %.3f", timestamp);
   }
   
   bool should_create_keyframe(const Eigen::Isometry3d& current_pose) {
     if (!last_keyframe_pose_) {
+      RCLCPP_INFO(this->get_logger(), "First keyframe - no previous pose");
       return true; // First frame
     }
     
     // Check translation
     double trans_dist = (current_pose.translation() - 
                         last_keyframe_pose_->translation()).norm();
-    if (trans_dist > keyframe_translation_threshold_) {
-      return true;
-    }
     
     // Check rotation
     Eigen::AngleAxisd angle_diff(current_pose.rotation() * 
                                  last_keyframe_pose_->rotation().transpose());
-    if (std::abs(angle_diff.angle()) > keyframe_rotation_threshold_) {
+    double rot_dist = std::abs(angle_diff.angle());
+    
+    RCLCPP_DEBUG(this->get_logger(), 
+                 "Keyframe check: trans_dist=%.3f (thresh=%.3f), rot_dist=%.3f (thresh=%.3f)",
+                 trans_dist, keyframe_translation_threshold_,
+                 rot_dist, keyframe_rotation_threshold_);
+    
+    if (trans_dist > keyframe_translation_threshold_) {
+      RCLCPP_INFO(this->get_logger(), "New keyframe: translation threshold exceeded (%.3f > %.3f)",
+                  trans_dist, keyframe_translation_threshold_);
+      return true;
+    }
+    
+    if (rot_dist > keyframe_rotation_threshold_) {
+      RCLCPP_INFO(this->get_logger(), "New keyframe: rotation threshold exceeded (%.3f > %.3f)",
+                  rot_dist, keyframe_rotation_threshold_);
       return true;
     }
     
@@ -339,12 +387,22 @@ private:
   }
   
   void visualization_callback() {
+    RCLCPP_DEBUG(this->get_logger(), "Visualization callback called");
+    
     // Get drift correction transform
     auto T_map_odom = drift_manager_->get_map_to_odom();
     
+    // Use odometry timestamp for all visualizations
+    rclcpp::Time viz_timestamp;
+    if (last_odom_.header.stamp.sec > 0) {
+      viz_timestamp = rclcpp::Time(last_odom_.header.stamp);
+    } else {
+      viz_timestamp = this->now();
+    }
+    
     // Publish map->odom transform with drift correction
     geometry_msgs::msg::TransformStamped map_to_odom;
-    map_to_odom.header.stamp = this->now();
+    map_to_odom.header.stamp = viz_timestamp;
     map_to_odom.header.frame_id = "map";
     map_to_odom.child_frame_id = "odom";
     
@@ -360,6 +418,20 @@ private:
     map_to_odom.transform.rotation.w = q_drift.w();
     
     tf_broadcaster_.sendTransform(map_to_odom);
+    
+    // Always publish base_link_slam transform even if no SLAM updates yet
+    // This ensures the TF tree is complete for visualization
+    if (last_odom_.header.stamp.sec > 0) {
+      geometry_msgs::msg::TransformStamped base_slam_tf;
+      base_slam_tf.header.stamp = viz_timestamp;
+      base_slam_tf.header.frame_id = "base_link";
+      base_slam_tf.child_frame_id = "base_link_slam";
+      base_slam_tf.transform.translation.x = 0.0;
+      base_slam_tf.transform.translation.y = 0.0;
+      base_slam_tf.transform.translation.z = 0.0;
+      base_slam_tf.transform.rotation.w = 1.0;
+      tf_broadcaster_.sendTransform(base_slam_tf);
+    }
     
     // Get current estimates
     if (use_simple_mapping_) {
@@ -426,14 +498,14 @@ private:
       for (const auto& [id, simple_lm] : simple_landmarks) {
         landmarks_map[id] = std::make_shared<ConeLandmark>(id, simple_lm.position, simple_lm.color);
       }
-      slam_visualizer_->visualizeLandmarks(landmarks_map);
+      slam_visualizer_->visualizeLandmarks(landmarks_map, viz_timestamp);
       
       // Visualize factor graph
       try {
         auto factor_graph = simple_mapping_->get_factor_graph();
         auto values = simple_mapping_->get_current_estimate();
         if (factor_graph.size() > 0) {
-          slam_visualizer_->visualizeFactorGraph(factor_graph, values);
+          slam_visualizer_->visualizeFactorGraph(factor_graph, values, viz_timestamp);
           
           // Update drift correction for SimpleConeMapping
           if (!values.empty()) {
@@ -474,7 +546,7 @@ private:
     // Only publish if we have landmarks
     if (!landmarks.empty()) {
       // Use visualizer
-      slam_visualizer_->visualizeLandmarks(landmarks);
+      slam_visualizer_->visualizeLandmarks(landmarks, viz_timestamp);
       
       RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                           "Publishing %zu landmarks", landmarks.size());
@@ -528,9 +600,10 @@ private:
           
           pose_pub_->publish(pose_msg);
           
-          // Publish TF
+          // Publish TF from map to base_link_slam
           geometry_msgs::msg::TransformStamped tf_msg;
           tf_msg.header = pose_msg.header;
+          tf_msg.header.frame_id = "map";  // Publish from map frame
           tf_msg.child_frame_id = "base_link_slam";
           tf_msg.transform.translation.x = pose2d.x();
           tf_msg.transform.translation.y = pose2d.y();
@@ -559,14 +632,14 @@ private:
     
     // Publish accumulated path
     if (!slam_path_.poses.empty()) {
-      slam_path_.header.stamp = this->now();
+      slam_path_.header.stamp = viz_timestamp;
       slam_visualizer_->updatePath(slam_path_);
     }
     
     // Publish keyframes
     try {
       auto keyframe_poses = mapping_->get_poses();
-      slam_visualizer_->visualizeKeyframes(keyframe_poses);
+      slam_visualizer_->visualizeKeyframes(keyframe_poses, viz_timestamp);
       
       RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                           "Publishing %zu keyframes", keyframe_poses.size());
