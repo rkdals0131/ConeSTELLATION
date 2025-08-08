@@ -7,13 +7,11 @@ This directory contains implementation files for the cone_stellation SLAM system
 - **cone_stellation/**: Main source directory
   - **ros/**: ROS2 specific implementations
     - `cone_slam_node.cpp`: Main ROS2 node that orchestrates SLAM
-  - **common/**: Common utilities implementation (if needed)
-  - **factors/**: Factor implementations (currently header-only)
+  - **factors/**: Factor implementations
     - `inter_landmark_factors.cpp`: Inter-landmark factor implementations
   - **preprocessing/**: Preprocessing implementations
     - `cone_preprocessor.cpp`: Cone preprocessing logic
-  - **mapping/**: Mapping module implementations (currently header-only)
-  - **util/**: Utility implementations (if needed)
+- **loop_closure_detector.cpp**: Loop closure detection implementation (top level)
 
 ## Implementation Notes
 

@@ -5,13 +5,30 @@ This directory contains all public headers for the cone_stellation SLAM system, 
 ## Structure
 
 - **cone_stellation/**: Main namespace directory containing all headers
-  - **common/**: Core data structures (Cone, EstimationFrame, etc.)
-  - **factors/**: GTSAM custom factors for cone SLAM
+  - **common/**: Core data structures (cone.hpp, estimation_frame.hpp, tentative_landmark.hpp)
+  - **factors/**: GTSAM custom factors (cone_observation_factor.hpp, inter_landmark_factors.hpp)
   - **mapping/**: Mapping and optimization modules
-  - **odometry/**: Odometry estimation modules (TO BE IMPLEMENTED)
-  - **preprocessing/**: Cone data preprocessing and filtering
-  - **util/**: ROS2 utilities and helpers
-  - **viewer/**: Visualization components (TO BE IMPLEMENTED)
+    - cone_mapping.hpp: Main mapping module with ISAM2
+    - cone_mapping_safe.hpp: Thread-safe wrapper
+    - data_association.hpp: Cone-landmark matching
+    - loop_closure_detector.hpp: Loop detection
+    - simple_cone_mapping.hpp: Basic mapping implementation
+  - **odometry/**: Odometry estimation modules
+    - cone_odometry_base.hpp: Abstract base class
+    - cone_odometry_2d.hpp: 2D odometry implementation
+    - async_cone_odometry.hpp: Asynchronous wrapper
+  - **preprocessing/**: Cone data preprocessing (cone_preprocessor.hpp)
+  - **util/**: ROS2 utilities
+    - ros_utils.hpp: ROS2 helper functions
+    - drift_correction_manager.hpp: Map-odom transform calculation
+  - **viewer/**: Visualization components
+    - viewer_base.hpp: Base visualization class
+    - viewer_manager.hpp: Manages multiple viewers
+    - cone_viewer.hpp, pose_viewer.hpp, track_viewer.hpp: Specific viewers
+    - optimization_viewer.hpp: Factor graph visualization
+    - loop_closure_viewer.hpp: Loop closure visualization
+    - slam_visualizer.hpp, slam_visualizer_improved.hpp: Complete SLAM visualization
+    - visualization_utils.hpp: Helper utilities
 
 ## Design Philosophy
 

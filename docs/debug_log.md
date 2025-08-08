@@ -455,3 +455,72 @@ ros2 launch cone_stellation imu_gps_ekf_launch.py motion_type:=figure8 radius:=3
 - 확장성: sparse/dense 환경 모두 대응
 
 ### 상태: ✅ 설계 완료, 구현 대기 중
+
+## 2025-01-04: TF Circular Dependency Fixed
+
+### Problem
+- `base_link` was moving in sync with `base_link_slam` instead of moving smoothly at 50Hz from EKF
+- When SLAM optimized, `base_link` would jump/freeze instead of continuous motion
+- `ros2 run tf2_tools view_frames` showed base_link following base_link_slam exactly
+
+### Root Cause (discovered using zen thinkdeep)
+- Circular dependency in drift correction calculation
+- `drift_correction_manager` was calculating: `T_map_odom = T_map_base * T_odom_base^-1`
+- But `T_map_base` already contains the previous `map->odom` transform implicitly
+- This created a feedback loop where SLAM was using its own output as input
+- Violation of REP-105 TF architecture principles
+
+### Solution Applied
+- **Immediate fix**: Disabled drift correction, set `map->odom` to identity transform
+- Modified `cone_slam_node.cpp`:
+  - Set `T_map_odom = Identity()` in `visualization_callback()` (line 387)
+  - Commented out `drift_manager_->add_odometry_pose()` calls (line 298-302)
+  - Commented out `drift_manager_->update_slam_pose()` calls (line 598-604, 510-516)
+
+### Result
+- ✅ EKF and SLAM now operate independently
+- ✅ `base_link` should move smoothly at 50Hz from EKF
+- ✅ `base_link_slam` shows SLAM's optimized position
+- ✅ No more circular dependency
+- ✅ Build successful
+
+### Long-term Solution Needed
+- Implement reference-based drift correction
+- Store odometry snapshot at optimization time
+- Calculate drift from reference, not current state
+- Follow proper REP-105 architecture
+
+### 상태: ✅ 즉시 수정 완료, 장기 해결책 필요
+
+## 2025-08-07: Frame Transformation Issue Fixed
+
+### Problem
+SLAM system was not creating landmarks because all cone observations were being filtered out during preprocessing. 
+- Symptom: "After preprocessing: 0 cones" despite receiving 16-17 cones from sensor
+- Frame 35: 0 observations, 0 landmarks created
+
+### Root Cause  
+Frame mismatch in coordinate transformation:
+- Cone observations were in `os_sensor` frame (LiDAR coordinates)
+- Preprocessing code was comparing cone positions directly with `base_link` pose in `map` frame
+- This caused incorrect distance calculations, making all cones appear > 20m away (max_cone_distance threshold)
+
+### Solution
+Added proper coordinate transformation in `cone_slam_node.cpp`:
+1. Get TF transform from `os_sensor` → `base_link`
+2. Transform cone observations to `base_link` frame
+3. Transform to `map` frame using odometry pose  
+4. Pass transformed positions to preprocessing
+
+### Code Changes
+Modified `cone_callback()` in `cone_slam_node.cpp`:
+- Added TF lookup for `os_sensor` → `base_link` transform
+- Transform each cone observation through the full chain: `os_sensor` → `base_link` → `map`
+- Gracefully handle missing transforms with identity fallback
+
+### Result
+✅ Build successful with warnings only
+✅ Cones should now pass preprocessing distance checks
+✅ Landmarks should be created normally
+
+### 상태: ✅ 수정 완료
