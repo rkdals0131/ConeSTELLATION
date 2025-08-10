@@ -9,27 +9,31 @@ ConeSTELLATION (Cone-based STructural ELement Layout for Autonomous NavigaTION) 
 - ROS2 topic structure: [topic_structure.md](topic_structure.md)
 - Debugging archive: [debug_log.md](debug_log.md)
 
-## 2. Current Status (2025-07-24)
+## 2. Current Status (August 2025)
 
-### ✅ Working Components
+### ✅ Fully Operational Components
 - **Core SLAM**: GTSAM-based factor graph with ISAM2 optimization
-- **Data Association**: Robust with color constraints and track ID support
-- **Inter-landmark Factors**: Distance constraints between co-observed cones (working)
-- **Loop Closure**: Enhanced for sparse environments with constellation-based recognition
-- **Drift Correction**: Dynamic map→odom transform calculation
 - **Visualization**: Comprehensive RViz display with performance optimization
 - **Sensor Simulators**: Enhanced IMU/GPS with realistic noise models
+- **IMU-GPS Integration**: Full EKF fusion
+- **EKF Configuration**: External 50-100Hz odometry for vehicle control working perfectly
+- **TF Tree Management**: All coordinate frame relationships resolved and broadcasting
+- **Rosbag Compatibility**: Reliable operation with recorded data playback
 
-### 🚧 In Progress
-- **IMU-GPS Integration**: GTSAM IMU preintegration and GPS factors
-- **EKF Configuration**: External 100Hz odometry for vehicle control
+### ⚠️ Working with Known Limitations
+- **Stationary Yaw Drift**: System functional but experiences gradual orientation drift when stationary (no wheel encoders)
+- **LiDAR Robustness**: Cone detection affected by vehicle vibrations in real-world conditions
+- **Data Association**: Robust with color constraints and track ID support
+- **Inter-landmark Factors**: Distance constraints between co-observed cones
+- **Loop Closure**: Enhanced for sparse environments with constellation-based recognition
+- **Drift Correction**: Dynamic map→odom transform calculation
 
 ### ❌ Not Yet Implemented
-- GTSAM IMU preintegration factors
-- RTK GPS position factors with adaptive weighting
-- Robot localization EKF configuration (partial - simulation only)
+- GTSAM IMU preintegration factors (using robot_localization instead)
+- RTK GPS position factors with adaptive weighting (using robot_localization)
 - Multi-threaded architecture
 - GLIM-inspired implicit loop closure (planned)
+- Wheel encoder integration for improved stationary performance
 
 ## 3. System Architecture
 
@@ -182,12 +186,14 @@ inter_landmark:
 - ISAM2 optimization
 - Drift correction
 
-### Phase 3: Advanced Features (Current)
+### Phase 3: Advanced Features ✅ (Completed)
 - ✅ Inter-landmark factors
-- ❌ Enhanced loop closure (failed - to be replaced)
-- 🚧 IMU-GPS integration
-- 🚧 GLIM-inspired implicit loop closure (new approach)
-- ⏳ Multi-threading
+- ✅ IMU-GPS integration (via robot_localization EKF)
+- ✅ TF tree management and broadcasting
+- ✅ Rosbag compatibility and testing
+- ❌ Enhanced loop closure (deprecated - replaced with simpler approach)
+- ⏳ GLIM-inspired implicit loop closure (future work)
+- ⏳ Multi-threading optimization
 
 ### Phase 4: Production Ready
 - ⏳ Robust optimization

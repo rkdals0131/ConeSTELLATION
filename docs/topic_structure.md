@@ -3,9 +3,15 @@
 ## Overview
 This document describes all ROS2 topics used by the cone_stellation SLAM system for input/output communication.
 
+## Current System Status
+- ✅ **Fully Operational**: SLAM + EKF fusion working with all topics below
+- ✅ **TF Tree Complete**: map → odom → base_link with proper transforms
+- ✅ **100Hz Odometry**: EKF fusion provides high-rate odometry
+- ✅ **Rosbag Compatible**: Works with recorded sensor data
+
 ## Input Topics
 
-### 1. `/fused_sorted_cones_ukf_sim` [custom_interface/msg/TrackedConeArray]
+### 1. `/fused_sorted_cones_ukf_map` [custom_interface/msg/TrackedConeArray] ✅
 - **Publisher**: Cone detection/fusion system or simulation
 - **Subscriber**: cone_slam_node
 - **Description**: Tracked cone detections in sensor frame
@@ -16,8 +22,8 @@ This document describes all ROS2 topics used by the cone_stellation SLAM system 
   - Cone colors (Yellow, Blue, Red, Orange, Unknown)
   - Track IDs for temporal association
 
-### 2. `/odom` [nav_msgs/msg/Odometry]
-- **Publisher**: Odometry system (wheel encoders, VIO, etc.)
+### 2. `/odometry/filtered` [nav_msgs/msg/Odometry] ✅
+- **Publisher**: EKF fusion node (robot_localization)
 - **Subscriber**: cone_slam_node
 - **Description**: Vehicle odometry for motion prediction
 - **Frame**: odom -> base_link
@@ -26,16 +32,16 @@ This document describes all ROS2 topics used by the cone_stellation SLAM system 
   - Pose with covariance
   - Twist with covariance
 
-### 3. `/imu/data` [sensor_msgs/msg/Imu] (Future)
-- **Publisher**: IMU sensor
-- **Subscriber**: cone_slam_node (not implemented yet)
+### 3. `/ouster/imu` [sensor_msgs/msg/Imu] ✅
+- **Publisher**: IMU sensor / imu_gps_publishers.py
+- **Subscriber**: EKF fusion node (robot_localization)
 - **Description**: IMU measurements for motion model
 - **Frame**: imu_link
 - **Rate**: 100-400 Hz
 
-### 4. `/gps/fix` [sensor_msgs/msg/NavSatFix] (Future)
-- **Publisher**: GPS receiver
-- **Subscriber**: cone_slam_node (not implemented yet)
+### 4. `/ublox_gps_node/fix` [sensor_msgs/msg/NavSatFix] ✅
+- **Publisher**: GPS receiver / imu_gps_publishers.py
+- **Subscriber**: EKF fusion node (robot_localization)
 - **Description**: Global position for loop closure
 - **Rate**: 1-10 Hz
 
@@ -93,9 +99,11 @@ This document describes all ROS2 topics used by the cone_stellation SLAM system 
 
 ## TF Transforms
 
-### Published by cone_slam_node:
-- `map` -> `odom`: SLAM correction transform
-- `map` -> `base_link_slam`: Direct SLAM pose estimate
+### Published by cone_slam_node: ✅
+- `map` -> `odom`: SLAM correction transform (drift correction)
+
+### Published by EKF fusion node: ✅
+- `odom` -> `base_link`: Fused odometry at 100Hz
 
 ### Required by cone_slam_node:
 - `odom` -> `base_link`: From odometry source

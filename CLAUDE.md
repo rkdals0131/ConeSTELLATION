@@ -221,3 +221,8 @@ See `implementation_status.md` for:
 
 - GLIM architecture: `/home/user1/ROS2_Workspace/GLIM_ws/src/glim/`
 - Development plan: `DEVELOPMENT_PLAN.md`
+
+---
+
+## 2025-08-08 — Status Note
+- Performed cone mapping robustness analysis under sensor shake; created `docs/cone_mapping_robustness_analysis.md` with prioritized fixes (gating by motion, remove early direct landmark creation, adaptive per-observation noise with robust loss, stronger association, inter-landmark factors from same-frame geometry, simple smoothing in preprocessing).

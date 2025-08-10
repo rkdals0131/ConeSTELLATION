@@ -492,35 +492,13 @@ ros2 launch cone_stellation imu_gps_ekf_launch.py motion_type:=figure8 radius:=3
 
 ### 상태: ✅ 즉시 수정 완료, 장기 해결책 필요
 
-## 2025-08-07: Frame Transformation Issue Fixed
-
-### Problem
-SLAM system was not creating landmarks because all cone observations were being filtered out during preprocessing. 
-- Symptom: "After preprocessing: 0 cones" despite receiving 16-17 cones from sensor
-- Frame 35: 0 observations, 0 landmarks created
-
-### Root Cause  
-Frame mismatch in coordinate transformation:
-- Cone observations were in `os_sensor` frame (LiDAR coordinates)
-- Preprocessing code was comparing cone positions directly with `base_link` pose in `map` frame
-- This caused incorrect distance calculations, making all cones appear > 20m away (max_cone_distance threshold)
-
-### Solution
-Added proper coordinate transformation in `cone_slam_node.cpp`:
-1. Get TF transform from `os_sensor` → `base_link`
-2. Transform cone observations to `base_link` frame
-3. Transform to `map` frame using odometry pose  
-4. Pass transformed positions to preprocessing
-
-### Code Changes
-Modified `cone_callback()` in `cone_slam_node.cpp`:
-- Added TF lookup for `os_sensor` → `base_link` transform
-- Transform each cone observation through the full chain: `os_sensor` → `base_link` → `map`
-- Gracefully handle missing transforms with identity fallback
-
-### Result
-✅ Build successful with warnings only
-✅ Cones should now pass preprocessing distance checks
-✅ Landmarks should be created normally
-
-### 상태: ✅ 수정 완료
+## 2025-08-08: Mapping robustness analysis under shake
+**Problem**: Cone mapping unstable when vehicle/LiDAR shakes; EKF odom is good after motion, yaw drifts when stationary (no wheel encoder).
+**Findings**:
+- Early direct landmark creation (first 30) bypasses tentative buffering
+- Constant observation noise; no robust loss; inter-landmark distance uses map positions
+- Association lacks covariance/track-id gating; preprocessor lacks smoothing
+- Pattern detection has no effect (pattern factors disabled)
+**Proposed actions**:
+1) Gate mapping by motion/yaw covariance; 2) Remove direct creation, rely on tentative promotion; 3) Per-observation adaptive noise + Huber; 4) Stronger association with track-id + Mahalanobis; 5) Inter-landmark distances from same-frame median; 6) Simple smoothing of tracked observations in preprocessor; 7) Ensure ISAM2 params loaded from YAML.
+**Status**: Documented in `docs/cone_mapping_robustness_analysis.md`; ready to implement incrementally.
