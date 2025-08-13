@@ -532,7 +532,7 @@ private:
   /**
    * @brief Check if we should create factor between two landmarks
    */
-  bool should_create_inter_landmark_factor(int id1, int id2) const {
+  bool should_create_inter_landmark_factor(int id1, int id2) {
     RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
                 "=== should_create_inter_landmark_factor START for L%d-L%d ===", id1, id2);
     
@@ -580,8 +580,13 @@ private:
       return false;
     }
     
-    // Avoid creating duplicate factors
-    // (In a real implementation, we'd track which factors have been created)
+    // Check if we've already created a factor for this pair
+    auto factor_key = std::make_pair(std::min(id1, id2), std::max(id1, id2));
+    if (created_inter_landmark_factors_.count(factor_key) > 0) {
+      RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
+                  "REJECT: Factor already exists for L%d-L%d", id1, id2);
+      return false;
+    }
     
     RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
                 "ACCEPT: Creating inter-landmark factor for L%d-L%d (co-obs: %d, dist: %.3f)",
@@ -593,6 +598,14 @@ private:
    * @brief Create distance factor between two landmarks
    */
   void create_distance_factor(int id1, int id2, const EstimationFrame::Ptr& frame) {
+    // Check for duplicate factor first
+    auto factor_key = std::make_pair(std::min(id1, id2), std::max(id1, id2));
+    if (created_inter_landmark_factors_.find(factor_key) != created_inter_landmark_factors_.end()) {
+      RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
+                  "Skipping duplicate inter-landmark factor for L%d-L%d", id1, id2);
+      return;
+    }
+    
     // Safety check: ensure landmarks exist
     if (landmarks_.find(id1) == landmarks_.end() || landmarks_.find(id2) == landmarks_.end()) {
       RCLCPP_DEBUG(rclcpp::get_logger("cone_mapping"), 
@@ -637,6 +650,10 @@ private:
       RCLCPP_INFO(rclcpp::get_logger("cone_mapping"), 
                   "Created inter-landmark factor between L%d and L%d (dist: %.2f)", 
                   id1, id2, measured_distance);
+      
+      // Register this factor to prevent duplicates
+      auto factor_key = std::make_pair(std::min(id1, id2), std::max(id1, id2));
+      created_inter_landmark_factors_.insert(factor_key);
     } catch (const std::exception& e) {
       RCLCPP_WARN(rclcpp::get_logger("cone_mapping"), 
                   "Exception creating inter-landmark factor: %s", e.what());
@@ -773,6 +790,10 @@ private:
   
   // Track tentative to confirmed landmark mapping for current frame
   std::unordered_map<int, int> tentative_to_landmark_;
+  
+  // Inter-landmark factor duplicate prevention registry
+  // Key: (min(id1, id2), max(id1, id2))
+  std::set<std::pair<int, int>> created_inter_landmark_factors_;
   
   /**
    * @brief Associate observation with tentative landmarks

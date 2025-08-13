@@ -56,14 +56,6 @@ public:
     RCLCPP_INFO(this->get_logger(), "use_simple_mapping parameter value: %s", 
                 use_simple_mapping ? "true" : "false");
     
-    // FORCE USE OF CONEMAPPING FOR TESTING INTER-LANDMARK FACTORS
-    use_simple_mapping = false;
-    RCLCPP_INFO(this->get_logger(), "FORCING use_simple_mapping to false for testing");
-    
-    // Debug: Double check the value
-    RCLCPP_INFO(this->get_logger(), "After forcing, use_simple_mapping = %s", 
-                use_simple_mapping ? "true" : "false");
-    
     if (use_simple_mapping) {
       RCLCPP_WARN(this->get_logger(), "Using SimpleConeMapping for debugging");
       simple_mapping_ = std::make_shared<SimpleConeMapping>();

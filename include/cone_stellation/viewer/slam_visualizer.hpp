@@ -7,6 +7,7 @@
 #include <nav_msgs/msg/path.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <tf2_ros/transform_broadcaster.h>
+#include <tf2/LinearMath/Quaternion.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/nonlinear/Values.h>
 
@@ -142,7 +143,7 @@ public:
    * @param values Current estimates
    * @param timestamp Optional timestamp for markers
    */
-  void visualizeFactorGraph(const gtsam::NonlinearFactorGraph& graph, 
+  virtual void visualizeFactorGraph(const gtsam::NonlinearFactorGraph& graph, 
                            const gtsam::Values& values,
                            const rclcpp::Time& timestamp = rclcpp::Time()) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -156,10 +157,10 @@ public:
     const size_t max_loop_closure_factors = 20;   // Show all loop closures if possible
     
     // Store factors by type with their indices for reverse iteration
-    std::vector<std::pair<size_t, const gtsam::NonlinearFactor::shared_ptr*>> observation_factors;
-    std::vector<std::pair<size_t, const gtsam::NonlinearFactor::shared_ptr*>> odometry_factors;
-    std::vector<std::pair<size_t, const gtsam::NonlinearFactor::shared_ptr*>> inter_landmark_factors;
-    std::vector<std::pair<size_t, const gtsam::NonlinearFactor::shared_ptr*>> loop_closure_factors;
+    std::vector<std::pair<size_t, gtsam::NonlinearFactor::shared_ptr>> observation_factors;
+    std::vector<std::pair<size_t, gtsam::NonlinearFactor::shared_ptr>> odometry_factors;
+    std::vector<std::pair<size_t, gtsam::NonlinearFactor::shared_ptr>> inter_landmark_factors;
+    std::vector<std::pair<size_t, gtsam::NonlinearFactor::shared_ptr>> loop_closure_factors;
     
     // First pass: categorize all factors
     size_t factor_index = 0;
@@ -185,14 +186,14 @@ public:
         bool is_loop_closure = std::abs(id2 - id1) > 5;
         
         if (is_loop_closure) {
-          loop_closure_factors.emplace_back(factor_index, &factor);
+          loop_closure_factors.emplace_back(factor_index, factor);
         } else {
-          odometry_factors.emplace_back(factor_index, &factor);
+          odometry_factors.emplace_back(factor_index, factor);
         }
       } else if ((type1 == 'x' && type2 == 'l') || (type1 == 'l' && type2 == 'x')) {
-        observation_factors.emplace_back(factor_index, &factor);
+        observation_factors.emplace_back(factor_index, factor);
       } else if (type1 == 'l' && type2 == 'l') {
-        inter_landmark_factors.emplace_back(factor_index, &factor);
+        inter_landmark_factors.emplace_back(factor_index, factor);
       }
       
       factor_index++;
@@ -255,7 +256,7 @@ public:
     size_t obs_start = observation_factors.size() > max_observation_factors ? 
                       observation_factors.size() - max_observation_factors : 0;
     for (size_t i = obs_start; i < observation_factors.size(); ++i) {
-      visualize_factor(*observation_factors[i].second, "observation_factors",
+      visualize_factor(observation_factors[i].second, "observation_factors",
                       0.0, 0.5, 1.0, 0.6, 0.02, 5.0);
     }
     
@@ -263,7 +264,7 @@ public:
     size_t odom_start = odometry_factors.size() > max_odometry_factors ?
                        odometry_factors.size() - max_odometry_factors : 0;
     for (size_t i = odom_start; i < odometry_factors.size(); ++i) {
-      visualize_factor(*odometry_factors[i].second, "odometry_factors",
+      visualize_factor(odometry_factors[i].second, "odometry_factors",
                       0.0, 1.0, 0.0, 0.8, 0.05, 10.0);
     }
     
@@ -271,7 +272,7 @@ public:
     size_t inter_start = inter_landmark_factors.size() > max_inter_landmark_factors ?
                         inter_landmark_factors.size() - max_inter_landmark_factors : 0;
     for (size_t i = inter_start; i < inter_landmark_factors.size(); ++i) {
-      visualize_factor(*inter_landmark_factors[i].second, "inter_landmark_factors",
+      visualize_factor(inter_landmark_factors[i].second, "inter_landmark_factors",
                       1.0, 0.0, 0.0, 0.8, 0.03, 30.0);
     }
     
@@ -279,7 +280,7 @@ public:
     size_t loop_start = loop_closure_factors.size() > max_loop_closure_factors ?
                        loop_closure_factors.size() - max_loop_closure_factors : 0;
     for (size_t i = loop_start; i < loop_closure_factors.size(); ++i) {
-      visualize_factor(*loop_closure_factors[i].second, "loop_closure_factors",
+      visualize_factor(loop_closure_factors[i].second, "loop_closure_factors",
                       0.7, 0.0, 0.7, 0.9, 0.06, 60.0);
     }
     

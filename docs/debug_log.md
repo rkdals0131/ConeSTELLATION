@@ -502,3 +502,23 @@ ros2 launch cone_stellation imu_gps_ekf_launch.py motion_type:=figure8 radius:=3
 **Proposed actions**:
 1) Gate mapping by motion/yaw covariance; 2) Remove direct creation, rely on tentative promotion; 3) Per-observation adaptive noise + Huber; 4) Stronger association with track-id + Mahalanobis; 5) Inter-landmark distances from same-frame median; 6) Simple smoothing of tracked observations in preprocessor; 7) Ensure ISAM2 params loaded from YAML.
 **Status**: Documented in `docs/cone_mapping_robustness_analysis.md`; ready to implement incrementally.
+
+## 2025-08-13 - Phase 1 Emergency Stabilization Completed
+
+### Issues Fixed
+1. **Package dependencies** - Added tf2_eigen and tf2_geometry_msgs to package.xml
+2. **Hardcoded override** - Removed use_simple_mapping = false hardcoding in cone_slam_node.cpp
+3. **Inter-landmark duplicates** - Implemented registry using std::set<std::pair<int,int>> to prevent duplicate factor creation
+4. **Drift correction** - Reconnected DriftCorrectionManager in odom_callback and visualization_callback
+5. **CMake TBB** - Fixed TBB linking to use modern CMake target (TBB::tbb)
+6. **SLAMVisualizer virtual** - Made visualizeFactorGraph virtual in base class
+7. **Missing headers** - Added multiple missing headers (chrono, vector, Eigen, limits, etc.)
+8. **map→odom identity** - Removed identity loop, now using DriftCorrectionManager properly
+9. **AsyncConeOdometry** - Implemented frame injection path in cone_callback
+10. **SLAMVisualizer bug** - Fixed factor classification pointer dangling issue (storing shared_ptr directly instead of pointer to loop variable)
+11. **ConeDistanceFactor** - Added singularity guard for near-zero distances
+
+### Result
+- Build successful with only warnings
+- All components initialize properly  
+- System ready for sensor data input
