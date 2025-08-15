@@ -11,7 +11,7 @@ This document describes all ROS2 topics used by the cone_stellation SLAM system 
 
 ## Input Topics
 
-### 1. `/fused_sorted_cones_ukf` [custom_interface/msg/TrackedConeArray] ✅ 권장
+### 1. `/cones/fused/ukf` [custom_interface/msg/TrackedConeArray] ✅ 권장
 - **Publisher**: Cone detection/fusion system or simulation
 - **Subscriber**: cone_slam_node
 - **Description**: Tracked cone detections in ORIGINAL sensor frame
@@ -28,7 +28,7 @@ os_to_base_tf = tf_buffer_.lookupTransform("base_link", msg->header.frame_id, tf
 // ... T_base_sensor * cone_sensor → base_link 상대좌표 obs.position
 ```
 
-### 1-ALT. `/fused_sorted_cones_ukf_map` [custom_interface/msg/TrackedConeArray] (비권장/주의)
+### 1-ALT. `/cones/fused/ukf/map` [custom_interface/msg/TrackedConeArray] (비권장/주의)
 - **Publisher**: 변환 노드(로컬 카르테시안 → 사용자 기준점)
 - **Subscriber**: cone_slam_node (기본 로직과 충돌 가능)
 - **Description**: Map 또는 로컬 카르테시안 좌표로 변환된 콘
@@ -130,7 +130,7 @@ os_to_base_tf = tf_buffer_.lookupTransform("base_link", msg->header.frame_id, tf
 Topic names can be remapped in the launch file if needed:
 ```xml
 <node pkg="cone_stellation" exec="cone_slam_node" name="cone_slam">
-  <remap from="/fused_sorted_cones_ukf_sim" to="/your/cone_topic"/>
+  <remap from="/cones/for_sim" to="/your/cone_topic"/>
   <remap from="/odom" to="/your/odometry_topic"/>
 </node>
 ```
@@ -138,5 +138,5 @@ Topic names can be remapped in the launch file if needed:
 ## Notes
 
 - All timestamps should be synchronized
-- Cone detections should be provided in ORIGINAL sensor frame with valid TF to `base_link` (권장: `/fused_sorted_cones_ukf`)
+- Cone detections should be provided in ORIGINAL sensor frame with valid TF to `base_link` (권장: `/cones/fused/ukf`)
 - The system expects pre-tracked cones (with consistent IDs across frames)

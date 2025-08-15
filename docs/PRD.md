@@ -20,7 +20,7 @@
 
 ### 기능 요구사항
 1) 입력/출력 인터페이스(ROS2)
-- 입력: `/fused_sorted_cones_ukf`(탐지/트랙ID/색상/신뢰도), `/odometry/filtered`(EKF 추정)
+- 입력: `/cones/fused/ukf`(탐지/트랙ID/색상/신뢰도), `/odometry/filtered`(EKF 추정)
 - 입력(오도메트리 소스): `src/INS/gps_imu_fusion`에서 퍼블리시되는 융합 결과를 사용 (시간동기 필수)
 - 출력: `/slam/pose`(map), `/slam/odometry`(odom 기준 보조), 시각화 마커들(`/slam/*`), TF(`map→base_link_slam`, `map→odom`)
 
@@ -240,7 +240,7 @@
 ## 입력 토픽 선택 기준(센서 프레임 권장)
 
 ### 결론
-- 입력은 원본 센서 프레임(`/fused_sorted_cones_ukf`, frame=os_sensor)을 권장합니다. SLAM이 TF를 통해 `base_link` 상대좌표로 변환해 관측 요인에 사용합니다.
+- 입력은 원본 센서 프레임(`/cones/fused/ukf`, frame=os_sensor)을 권장합니다. SLAM이 TF를 통해 `base_link` 상대좌표로 변환해 관측 요인에 사용합니다.
 - `*_map`(이미 월드/로컬 카르테시안 변환된 관측)은 현재 관측 모델과 충돌하므로 비권장입니다. 사용하려면 월드-관측 팩터로 별도 분기가 필요합니다.
 
 ### 근거

@@ -14,7 +14,6 @@
 #include "cone_stellation/odometry/cone_odometry_2d.hpp"
 #include "cone_stellation/odometry/async_cone_odometry.hpp"
 #include "cone_stellation/mapping/cone_mapping.hpp"
-#include "cone_stellation/mapping/simple_cone_mapping.hpp"
 #include "cone_stellation/common/tentative_landmark.hpp"
 #include "cone_stellation/util/ros_utils.hpp"
 #include "cone_stellation/util/drift_correction_manager.hpp"
@@ -50,21 +49,9 @@ public:
     async_odometry_ = std::make_shared<AsyncConeOdometry>(cone_odometry);
     async_odometry_->start();
     
-    // Check if we should use simple mapping for debugging
-    bool use_simple_mapping = this->declare_parameter("mapping.use_simple_mapping", false);
-    
-    RCLCPP_INFO(this->get_logger(), "use_simple_mapping parameter value: %s", 
-                use_simple_mapping ? "true" : "false");
-    
-    if (use_simple_mapping) {
-      RCLCPP_WARN(this->get_logger(), "Using SimpleConeMapping for debugging");
-      simple_mapping_ = std::make_shared<SimpleConeMapping>();
-      use_simple_mapping_ = true;
-    } else {
-      RCLCPP_INFO(this->get_logger(), "Using ConeMapping with inter-landmark factors support");
-      mapping_ = std::make_shared<ConeMapping>(mapping_config_);
-      use_simple_mapping_ = false;
-    }
+    // Initialize ConeMapping with inter-landmark factors support
+    RCLCPP_INFO(this->get_logger(), "Using ConeMapping with inter-landmark factors support");
+    mapping_ = std::make_shared<ConeMapping>(mapping_config_);
     
     // Subscribers with QoS settings
     rclcpp::QoS cone_qos(10);
@@ -72,7 +59,7 @@ public:
     cone_qos.durability(rclcpp::DurabilityPolicy::Volatile);
     
     cone_sub_ = this->create_subscription<custom_interface::msg::TrackedConeArray>(
-        "/fused_sorted_cones_ukf", cone_qos,
+        "/cones/fused/ukf", cone_qos,
         std::bind(&ConeSLAMNode::cone_callback, this, std::placeholders::_1));
     
     rclcpp::QoS odom_qos(100);
@@ -295,18 +282,11 @@ private:
         frame->cone_observations = processed;
         frame->is_keyframe = true;
       
-      if (use_simple_mapping_) {
-        frame->id = 0;  // SimpleConeMapping doesn't track IDs
-        // Add to simple mapping
-        simple_mapping_->add_keyframe(frame);
-        RCLCPP_INFO(this->get_logger(), "Using SimpleConeMapping");
-      } else {
-        frame->id = mapping_->get_next_pose_id();
-        RCLCPP_INFO(this->get_logger(), "About to call ConeMapping::add_keyframe for frame %d", frame->id);
-        // Add to mapping
-        mapping_->add_keyframe(frame);
-        RCLCPP_INFO(this->get_logger(), "ConeMapping::add_keyframe returned");
-      }
+      frame->id = mapping_->get_next_pose_id();
+      RCLCPP_INFO(this->get_logger(), "About to call ConeMapping::add_keyframe for frame %d", frame->id);
+      // Add to mapping
+      mapping_->add_keyframe(frame);
+      RCLCPP_INFO(this->get_logger(), "ConeMapping::add_keyframe returned");
       
       last_keyframe_pose_ = sensor_pose;
       
@@ -457,114 +437,7 @@ private:
     // REMOVED: base_link -> base_link_slam transform
     // The map -> base_link_slam transform from SLAM optimization is sufficient
     
-    // Get current estimates
-    if (use_simple_mapping_) {
-      // SimpleConeMapping visualization
-      auto simple_landmarks = simple_mapping_->get_landmarks();
-      
-      // Create visualization for simple landmarks
-      visualization_msgs::msg::MarkerArray markers;
-      int marker_id = 0;
-      
-      for (const auto& [id, landmark] : simple_landmarks) {
-        visualization_msgs::msg::Marker marker;
-        marker.header.frame_id = "map";
-        marker.header.stamp = this->now();
-        marker.ns = "landmarks";
-        marker.id = marker_id++;
-        marker.type = visualization_msgs::msg::Marker::CYLINDER;
-        marker.action = visualization_msgs::msg::Marker::ADD;
-        
-        marker.pose.position.x = landmark.position.x();
-        marker.pose.position.y = landmark.position.y();
-        marker.pose.position.z = 0.3;
-        marker.pose.orientation.w = 1.0;
-        
-        marker.scale.x = 0.2;
-        marker.scale.y = 0.2;
-        marker.scale.z = 0.6;
-        
-        // Set color based on cone type
-        switch (landmark.color) {
-          case ConeColor::YELLOW:
-            marker.color.r = 1.0;
-            marker.color.g = 1.0;
-            marker.color.b = 0.0;
-            break;
-          case ConeColor::BLUE:
-            marker.color.r = 0.0;
-            marker.color.g = 0.0;
-            marker.color.b = 1.0;
-            break;
-          case ConeColor::RED:
-            marker.color.r = 1.0;
-            marker.color.g = 0.0;
-            marker.color.b = 0.0;
-            break;
-          case ConeColor::ORANGE:
-            marker.color.r = 1.0;
-            marker.color.g = 0.5;
-            marker.color.b = 0.0;
-            break;
-          default:
-            marker.color.r = 0.5;
-            marker.color.g = 0.5;
-            marker.color.b = 0.5;
-        }
-        marker.color.a = 1.0;
-        
-        marker.lifetime = rclcpp::Duration::from_seconds(0);
-        markers.markers.push_back(marker);
-      }
-      
-      // Use visualizer instead
-      std::unordered_map<int, ConeLandmark::Ptr> landmarks_map;
-      for (const auto& [id, simple_lm] : simple_landmarks) {
-        landmarks_map[id] = std::make_shared<ConeLandmark>(id, simple_lm.position, simple_lm.color);
-      }
-      slam_visualizer_->visualizeLandmarks(landmarks_map, viz_timestamp);
-      
-      // Visualize factor graph
-      try {
-        auto factor_graph = simple_mapping_->get_factor_graph();
-        auto values = simple_mapping_->get_current_estimate();
-        if (factor_graph.size() > 0) {
-          slam_visualizer_->visualizeFactorGraph(factor_graph, values, viz_timestamp);
-          
-          // Update drift correction for SimpleConeMapping
-          if (!values.empty()) {
-            // Get latest pose - find highest pose index
-            int latest_pose_id = -1;
-            for (int i = 0; i < 100; i++) { // reasonable upper bound for simple mapping
-              gtsam::Symbol pose_key('x', i);
-              if (values.exists(pose_key)) {
-                latest_pose_id = i;
-              } else {
-                break;
-              }
-            }
-            
-            if (latest_pose_id >= 0) {
-              gtsam::Symbol latest_pose_key('x', latest_pose_id);
-              auto pose2d = values.at<gtsam::Pose2>(latest_pose_key);
-              
-              // DISABLED: Drift correction temporarily disabled to fix circular dependency
-              // Eigen::Isometry3d T_map_base = Eigen::Isometry3d::Identity();
-              // T_map_base.translation() = Eigen::Vector3d(pose2d.x(), pose2d.y(), 0.0);
-              // T_map_base.linear() = Eigen::AngleAxisd(pose2d.theta(), Eigen::Vector3d::UnitZ()).toRotationMatrix();
-              // 
-              // double current_time = this->now().seconds();
-              // drift_manager_->update_slam_pose(current_time, T_map_base);
-            }
-          }
-        }
-      } catch (const std::exception& e) {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                            "Failed to visualize simple mapping factors: %s", e.what());
-      }
-      return;  // Skip the rest for simple mapping
-    }
-    
+    // Get current estimates from ConeMapping
     auto landmarks = mapping_->get_landmarks();
     
     // Debug: Always log landmark count
@@ -709,8 +582,6 @@ private:
   ConePreprocessor::Ptr preprocessor_;
   AsyncConeOdometry::Ptr async_odometry_;
   ConeMapping::Ptr mapping_;
-  SimpleConeMapping::Ptr simple_mapping_;
-  bool use_simple_mapping_ = false;
   std::shared_ptr<DriftCorrectionManager> drift_manager_;
   
   // Configuration

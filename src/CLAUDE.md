@@ -23,7 +23,7 @@
 
 - **주요 토픽/TF**
   - 구독(Subscriber)
-    - `/fused_sorted_cones_ukf` (`custom_interface::msg::TrackedConeArray`, QoS=BestEffort/Volatile, depth=10) → `cone_callback`
+    - `/cones/fused/ukf` (`custom_interface::msg::TrackedConeArray`, QoS=BestEffort/Volatile, depth=10) → `cone_callback`
     - `/odometry/filtered` (`nav_msgs::msg::Odometry`, QoS=BestEffort/Volatile, depth=100) → `odom_callback`
   - 퍼블리시(Publisher)
     - `/slam/pose` (`geometry_msgs::msg::PoseStamped`, BestEffort/Volatile)
@@ -180,7 +180,7 @@
 
 ## 시스템 흐름 요약(E2E)
 
-1. `/fused_sorted_cones_ukf` 수신 → 센서→`base_link` 변환 → 전처리
+1. `/cones/fused/ukf` 수신 → 센서→`base_link` 변환 → 전처리
 2. 키프레임 조건 충족 시 `EstimationFrame` 생성 → 매핑(`ConeMapping`)에 추가
 3. 매핑은 ISAM2 등을 통해 최적화 수행(헤더 구현부)
 4. 시각화 콜백에서 랜드마크/그래프/포즈/경로/키프레임 퍼블리시 및 TF(`map->base_link_slam`) 송출
@@ -213,7 +213,7 @@
 
 - 노드 이름: `cone_slam`
 - 프레임: 입력 센서 프레임 → `base_link`(관측), 최적화 기준 `map`, 외란 통합 `odom`
-- 토픽: 구독(`/fused_sorted_cones_ukf`, `/odometry/filtered`), 퍼블리시(`/slam/pose`, `/slam/odometry`)
+- 토픽: 구독(`/cones/fused/ukf`, `/odometry/filtered`), 퍼블리시(`/slam/pose`, `/slam/odometry`)
 - TF: `map->odom`(항등, 100ms), `map->base_link_slam`(시각화 콜백)
 - 키프레임 조건: 평행이동 > 1.0 m 또는 회전 > 0.2 rad
 - 루프클로저: 별자리 기술자+RANSAC, 가중 유사도(0.3/0.3/0.4)
