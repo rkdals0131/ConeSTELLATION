@@ -4,13 +4,21 @@ import subprocess
 import time
 import signal
 import sys
+import os
+from pathlib import Path
+from ament_index_python.packages import get_package_share_directory
 
 def run_slam_test():
     print("Starting inter-landmark factor test...")
     
+    # Find workspace root dynamically
+    current_file = Path(__file__).resolve()
+    workspace_root = current_file.parent.parent.parent.parent.parent  # Navigate up to ros2_ws
+    setup_bash = workspace_root / "install" / "setup.bash"
+    
     # Start dummy publisher
     dummy_proc = subprocess.Popen(
-        ["bash", "-c", "source install/setup.bash && ros2 run cone_stellation dummy_publisher_node.py"],
+        ["bash", "-c", f"source {setup_bash} && ros2 run cone_stellation dummy_publisher_node.py"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True
@@ -20,8 +28,16 @@ def run_slam_test():
     time.sleep(3)
     
     # Start SLAM node and capture output
+    # Get package share directory for config file
+    try:
+        cone_stellation_share = get_package_share_directory('cone_stellation')
+        config_file = Path(cone_stellation_share) / 'config' / 'slam_config.yaml'
+    except:
+        # Fallback to source directory if package not installed
+        config_file = workspace_root / 'src' / 'cone_stellation' / 'config' / 'slam_config.yaml'
+    
     slam_proc = subprocess.Popen(
-        ["bash", "-c", "source install/setup.bash && ros2 run cone_stellation cone_slam_node --ros-args --params-file src/cone_stellation/config/slam_config.yaml"],
+        ["bash", "-c", f"source {setup_bash} && ros2 run cone_stellation cone_slam_node --ros-args --params-file {config_file}"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True
