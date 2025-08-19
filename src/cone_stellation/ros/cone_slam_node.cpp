@@ -59,7 +59,7 @@ public:
     cone_qos.durability(rclcpp::DurabilityPolicy::Volatile);
     
     cone_sub_ = this->create_subscription<custom_interface::msg::TrackedConeArray>(
-        "/cones/fused/ukf", cone_qos,
+        "/cone/fused/ukf", cone_qos,
         std::bind(&ConeSLAMNode::cone_callback, this, std::placeholders::_1));
     
     rclcpp::QoS odom_qos(100);
