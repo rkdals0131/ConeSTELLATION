@@ -522,3 +522,28 @@ ros2 launch cone_stellation imu_gps_ekf_launch.py motion_type:=figure8 radius:=3
 - Build successful with only warnings
 - All components initialize properly  
 - System ready for sensor data input
+
+## 2025-08-24 - Critical Drift Correction Issue Identified
+
+### Problem
+Comprehensive package analysis revealed SLAM is NOT performing drift correction - map→odom always publishes identity transform.
+
+### Root Cause
+- Lines 105-118 in cone_slam_node.cpp: Timer publishes static identity transform every 100ms
+- Lines 338-342: `drift_manager_->add_odometry_pose()` commented out
+- Lines 525-531: `drift_manager_->update_slam_pose()` commented out
+- Previous fix for circular dependency completely disabled drift correction
+
+### Impact
+- System functioning as mapping-only, not SLAM
+- No localization correction provided
+- map→odom transform always (0,0,0) translation, identity rotation
+- TrackedConeArray input processed correctly but no drift correction output
+
+### Required Fix
+1. Remove or modify identity transform timer (lines 105-118)
+2. Re-enable DriftCorrectionManager calls
+3. Properly calculate map→odom from SLAM optimization
+4. Resolve circular dependency without disabling core functionality
+
+### Status: ❌ CRITICAL - SLAM not functioning as intended

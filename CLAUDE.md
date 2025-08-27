@@ -30,11 +30,16 @@ ConeSTELLATION (Cone-based STructural ELement Layout for Autonomous NavigaTION) 
 ## Current Status
 
 - **Created**: 2025-07-18
-- **Updated**: 2025-07-28 (IMU-GPS EKF fusion implemented)
-- **Status**: SLAM Working Well with Inter-landmark Factors AND Loop Closure! Full SLAM pipeline operational.
+- **Updated**: 2025-08-24 (Critical drift correction issue identified)
+- **Status**: ⚠️ **SLAM drift correction NOT working - only mapping functional**
 - **Architecture**: Based on GLIM's proven modular design with novel inter-landmark factors
 - **Key Decision**: Use external IMU+GPS odometry, SLAM for mapping only (like GLIM)
-- **Active Development**: IMU-GPS EKF fusion ready for testing
+- **Active Development**: Drift correction restoration required
+- **🔴 CRITICAL ISSUE**: 
+  - **map→odom transform always publishes identity** (no drift correction)
+  - DriftCorrectionManager disabled due to circular dependency
+  - System functioning as mapping-only, not SLAM
+  - Fix required in cone_slam_node.cpp lines 105-118, 338-342, 525-531
 - **Latest Updates**: 
   - ✅ Data association working excellently with minimal overlapping landmarks
   - ✅ Noise filtering successfully blocks false positives/negatives
@@ -43,8 +48,8 @@ ConeSTELLATION (Cone-based STructural ELement Layout for Autonomous NavigaTION) 
   - ✅ Track ID properly utilized in data association
   - ✅ Clean visualization without orphan nodes
   - ✅ Odometry architecture decision made (IMU+GPS for control, SLAM for correction)
-  - ✅ Drift correction implemented! map->odom transform now updates based on SLAM optimization
-  - ✅ DriftCorrectionManager with pose interpolation (GLIM-inspired)
+  - ❌ Drift correction NOT working! map->odom always identity transform
+  - ❌ DriftCorrectionManager disabled (circular dependency issue)
   - ✅ Inter-landmark factors NOW WORKING! Co-observation tracking fixed
   - ✅ Circular track shapes better maintained with inter-landmark constraints
   - ✅ 하이브리드 아키텍처 결정: 외부 EKF (100Hz) + SLAM 맵핑 (20Hz)

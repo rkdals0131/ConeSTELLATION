@@ -6,7 +6,7 @@ ConeSTELLATION은 Formula Student Driverless 자율주행을 위한 콘 기반 G
 
 **핵심 혁신**: 희박한 콘 관측 환경(프레임당 2-10개)에서도 안정적인 지도 구축을 위한 Inter-landmark 제약과 보수적 ISAM2 최적화
 
-## 2. 현재 상태 (2025년 8월)
+## 2. 현재 상태 (2025년 8월 24일 업데이트)
 
 ### ✅ 구현 완료 및 작동 중
 - **핵심 SLAM**: GTSAM 기반 팩터 그래프, ISAM2 최적화
@@ -18,8 +18,13 @@ ConeSTELLATION은 Formula Student Driverless 자율주행을 위한 콘 기반 G
 - **데이터 연관**: 색상 제약 및 트랙 ID 지원
 - **Rosbag 호환성**: 기록된 데이터 재생으로 신뢰성 있는 작동
 
+### ❌ 핵심 기능 비활성화 (즉시 수정 필요)
+- **🔴 드리프트 보정 완전 비활성화**: map→odom 변환이 항상 identity transform으로 고정
+  - DriftCorrectionManager가 circular dependency로 인해 주석 처리됨
+  - 실제로 SLAM이 아닌 단순 mapping만 수행 중
+  - cone_slam_node.cpp의 105-118, 338-342, 525-531 라인 수정 필요
+
 ### ⚠️ 부분 구현 (개선 필요)
-- **드리프트 보정**: map→odom 변환이 항등으로 고정됨 (코드 주석 처리됨)
 - **루프 클로저**: 별자리 기반 설계 완료, 통합 필요
 - **AsyncConeOdometry**: 스레드 시작되나 프레임 주입 없음
 - **패턴 팩터**: Line/Angle/Parallel - Jacobian 미구현
@@ -69,26 +74,32 @@ ConeSTELLATION은 Formula Student Driverless 자율주행을 위한 콘 기반 G
 **목표**: 핵심 버그 수정 및 기본 기능 복구
 
 **작업 목록**:
-1. **패키지 의존성 수정**
+
+1. **🔴 드리프트 보정 복구 (최우선)**
+   - 현재 상태: map→odom이 항상 identity transform (drift correction 완전 비활성화)
+   - 위치: `src/cone_stellation/ros/cone_slam_node.cpp`
+     - Lines 105-118: identity transform timer 제거 또는 수정
+     - Lines 338-342: drift_manager_->add_odometry_pose() 재활성화
+     - Lines 525-531: drift_manager_->update_slam_pose() 재활성화
+   - Circular dependency 문제 해결
+   - 실제 map→odom 변환 계산 및 발행
+
+2. **패키지 의존성 수정**
    ```xml
    <!-- package.xml에 추가 -->
    <depend>tf2_eigen</depend>
    <depend>tf2_geometry_msgs</depend>
    ```
 
-2. **하드코딩 제거**
+3. **하드코딩 제거**
    - 위치: `src/cone_stellation/ros/cone_slam_node.cpp:59-66`
    - 작업: `use_simple_mapping` 강제 덮어쓰기 제거
 
-3. **Inter-landmark 중복 방지**
+4. **Inter-landmark 중복 방지**
    ```cpp
    // (min(i,j), max(i,j)) 레지스트리 구현
    std::set<std::pair<int,int>> created_factors_;
    ```
-
-4. **드리프트 보정 복구**
-   - DriftCorrectionManager 재연결
-   - map→odom 동적 계산 및 발행
 
   5. **CMake TBB 정합(필수 링크 오류 예방)**
      - `find_package(TBB REQUIRED)` 추가 후 타깃 링크를 `TBB::tbb`로 표준화

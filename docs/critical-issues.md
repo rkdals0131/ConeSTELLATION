@@ -6,6 +6,39 @@ This document outlines critical issues, bugs, and technical debt identified duri
 
 ## Critical Issues (Must Fix)
 
+### 🔴 0. SLAM Drift Correction Not Working (HIGHEST PRIORITY)
+
+**Severity**: CRITICAL  
+**Impact**: System not functioning as SLAM, only as mapping system
+**Discovery Date**: 2025-08-24
+
+**Description**: The SLAM node publishes only identity transform for map→odom, completely disabling drift correction functionality. This means the system is NOT performing localization, only mapping.
+
+**Current State**:
+```cpp
+// In cone_slam_node.cpp lines 105-118
+// Publishing static identity transform instead of actual drift correction
+tf.transform.translation.x = 0.0;  // Always zero
+tf.transform.translation.y = 0.0;  // Always zero  
+tf.transform.translation.z = 0.0;  // Always zero
+tf.transform.rotation.w = 1.0;     // Identity rotation
+
+// Lines 338-342 and 525-531: DriftCorrectionManager disabled
+// DISABLED: Drift correction temporarily disabled to fix circular dependency
+```
+
+**Root Cause**: Circular dependency issue led to complete disabling of DriftCorrectionManager
+
+**Solution Required**:
+1. Re-enable DriftCorrectionManager integration
+2. Fix circular dependency issue
+3. Calculate actual map→odom transform from SLAM optimization
+4. Publish dynamic map→odom transform instead of identity
+
+**Code Location**: 
+- `/home/user1/ROS2_Workspace/ros2_ws/src/cone_stellation/src/cone_stellation/ros/cone_slam_node.cpp`
+- Lines: 105-118 (identity transform timer), 338-342 (disabled odometry update), 525-531 (disabled SLAM update)
+
 ### 1. Missing GTSAM IMU Preintegration
 
 **Severity**: High  

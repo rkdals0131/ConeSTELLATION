@@ -1,88 +1,219 @@
 # ConeSTELLATION SLAM Configuration
+# ======================================
+# 작성일: 2025-08-24
+# 이 파일은 cone_slam_node에서 로드되어 전처리, 맵핑, 데이터 연관 등의 동작을 제어합니다.
+# 
+# ⚠️ 주의사항:
+# - 일부 파라미터는 코드에서 하드코딩된 기본값으로 덮어씌워집니다 (아래 표시)
+# - 일부 파라미터는 아직 구현되지 않았거나 사용되지 않습니다 (아래 표시)
+# ======================================
+
 cone_slam:
   ros__parameters:
-    # Preprocessing parameters
+    # ======================================
+    # 전처리 파라미터 (Preprocessing)
+    # 사용 파일: cone_preprocessor.hpp
+    # ======================================
     preprocessing:
-      # Outlier rejection
-      max_cone_distance: 30.0          # Maximum distance from sensor to cone (sensor-relative)
-      min_cone_confidence: 0.5         # Minimum detection confidence [0,1]
+      # === 이상치 제거 ===
+      # 센서로부터 너무 멀거나 신뢰도가 낮은 콘 제거
+      max_cone_distance: 15.0          # 센서로부터 콘까지 최대 거리 (미터)
+                                       # 사용처: cone_preprocessor.hpp:104
+                                       # ⚠️ 주의: 코드 기본값 20.0으로 덮어씌워질 수 있음
       
-      # Pattern detection
-      enable_pattern_detection: true   # Enable geometric pattern detection
-      line_fitting_threshold: 0.2      # Max distance from line (meters)
-      min_cones_for_line: 3           # Minimum cones to fit line
+      min_cone_confidence: 0.4         # 최소 검출 신뢰도 [0,1]
+                                       # 사용처: cone_preprocessor.hpp:109
+                                       # ⚠️ 주의: 코드 기본값 0.5로 덮어씌워질 수 있음
       
-      # Tracking
-      association_threshold: 1.0       # Max distance for same cone (meters)
-      max_tracking_frames: 10         # Track cones for N frames
+      # === 패턴 검출 (Pattern Detection) ===
+      # 콘들의 기하학적 패턴(직선 등)을 검출하여 구조적 정보 추출
+      # 주의: inter-landmark factors와는 다른 기능!
+      # - Pattern Detection: 전처리 단계에서 기하학적 구조 인식 (직선 검출)
+      # - Inter-landmark Factors: 맵핑 단계에서 거리 제약 생성 (콘 간 거리 유지)
+      enable_pattern_detection: true   # 기하학적 패턴 검출 활성화
+                                       # 사용처: cone_preprocessor.hpp:73
+                                       # 현재 직선 패턴만 구현됨
+      
+      line_fitting_threshold: 0.2      # 직선으로부터 최대 허용 거리 (미터)
+                                       # 사용처: cone_preprocessor.hpp:188
+                                       # 콘이 직선 상에 있는지 판단하는 임계값
+      
+      min_cones_for_line: 5           # 직선 피팅에 필요한 최소 콘 개수
+                                       # 사용처: cone_preprocessor.hpp:73,136,165
+                                       # ⚠️ 주의: 코드 기본값 3으로 덮어씌워질 수 있음
+      
+      # === 추적 (Tracking) ===
+      # ⚠️ 경고: 현재 매우 기초적인 구현만 존재 (ID 할당만 수행)
+      # 아래 파라미터들은 대부분 사용되지 않음
+      association_threshold: 1.0       # 동일 콘으로 판단하는 최대 거리 (미터)
+                                       # ❌ 현재 사용 안 됨 (단순 ID 증가만 구현)
+                                       # ⚠️ 주의: association 섹션에 1.5로 중복 정의됨!
+      
+      max_tracking_frames: 10         # 콘을 추적할 최대 프레임 수
+                                       # ❌ 현재 사용 안 됨 (프레임 기반 추적 미구현)
 
-    # Mapping parameters
+    # ======================================
+    # 맵핑 파라미터 (Mapping)
+    # 사용 파일: cone_mapping.hpp
+    # ======================================
     mapping:
-      # ISAM2 optimization
-      isam2_relinearize_threshold: 0.01
-      isam2_relinearize_skip: 1
+      # === ISAM2 최적화 설정 ===
+      # ❌ 경고: 이 파라미터들은 현재 로드되지 않음!
+      # cone_slam_node.cpp의 load_config()에서 무시됨
+      isam2_relinearize_threshold: 0.01   # ❌ 사용 안 됨 (미구현)
+      isam2_relinearize_skip: 1           # ❌ 사용 안 됨 (미구현)
       
-      # Factor noise models (standard deviations)
-      odometry_noise: 0.1                    # Odometry factor noise
-      cone_observation_noise: 0.5            # Cone observation noise
-      inter_landmark_distance_noise: 0.1     # Inter-landmark distance factor
-      pattern_factor_noise: 0.05             # Pattern-based factor noise
+      # === 팩터 노이즈 모델 (표준편차) ===
+      # ❌ 경고: 이 파라미터들도 현재 로드되지 않음!
+      odometry_noise: 0.1                    # ❌ 사용 안 됨 (하드코딩됨)
+      cone_observation_noise: 0.5            # ❌ 사용 안 됨 (하드코딩됨)
+      inter_landmark_distance_noise: 0.1     # ✅ 사용됨 - Inter-landmark 팩터 노이즈
+                                             # 사용처: cone_mapping.hpp에서 거리 제약 생성 시
+      pattern_factor_noise: 0.05             # ❌ 사용 안 됨 (패턴 팩터 비활성화)
+                                             # cone_mapping.hpp:667에서 즉시 return
       
-      # Inter-landmark factor creation (KEY INNOVATION)
-      enable_inter_landmark_factors: true     # Enable inter-landmark distance constraints
-      use_simple_mapping: false               # Use ConeMapping with inter-landmark factors
-      min_covisibility_count: 2              # Min times cones seen together
-      max_landmark_distance: 10.0            # Max distance for inter-landmark factor
+      # === Inter-landmark 팩터 생성 (핵심 혁신) ===
+      # 동시에 관측된 콘들 간의 거리를 제약으로 추가하여 지도 일관성 향상
+      # Pattern Detection과의 차이:
+      # - Pattern Detection: 콘들이 특정 기하학적 패턴(직선)을 이루는지 감지
+      # - Inter-landmark Factors: 관측된 콘들 간 실제 거리를 유지하는 제약
+      enable_inter_landmark_factors: true     # Inter-landmark 거리 제약 활성화
+                                              # 사용처: cone_mapping.hpp:624
+                                              # ✅ 정상 작동 중
       
-      # Optimization triggers
-      optimize_every_n_frames: 1           # Optimize every 1 keyframes to prevent blocking
-      optimize_on_loop_closure: true         # Force optimization on loop closure
+      use_simple_mapping: false               # SimpleConeMapping 대신 ConeMapping 사용
+                                              # ❌ 사용 안 됨 (파라미터 로드 안 됨)
+      
+      min_covisibility_count: 2              # 콘들이 함께 관측되어야 하는 최소 횟수
+                                              # 사용처: cone_mapping.hpp:should_create_inter_landmark_factor()
+                                              # ✅ 정상 작동 중
+      
+      max_landmark_distance: 10.0            # Inter-landmark 팩터 생성 최대 거리 (미터)
+                                              # 사용처: cone_mapping.hpp:should_create_inter_landmark_factor()
+                                              # ✅ 정상 작동 중
+      
+      # === 최적화 트리거 ===
+      optimize_every_n_frames: 1           # N개 키프레임마다 최적화 수행
+                                           # 사용처: cone_mapping.hpp:451
+                                           # ⚠️ 주의: 코드 기본값 10으로 덮어씌워질 수 있음
+                                           # 1로 설정 시 매 프레임 최적화 (성능 저하 가능)
+      
+      optimize_on_loop_closure: true         # 루프 클로저 검출 시 강제 최적화
+                                             # ⚠️ 주의: cone_slam_node.cpp:166에서 false로 하드코딩
 
-    # Keyframe selection
+    # ======================================
+    # 키프레임 선택 (Keyframe Selection)
+    # 사용 파일: cone_slam_node.cpp:should_create_keyframe()
+    # ======================================
     keyframe:
-      translation_threshold: 1.0       # Minimum translation for new keyframe (meters)
-      rotation_threshold: 0.2          # Minimum rotation for new keyframe (radians)
-      time_threshold: 1.0              # Maximum time between keyframes (seconds)
+      translation_threshold: 1.0       # 새 키프레임 생성 최소 이동 거리 (미터)
+                                      # 사용처: cone_slam_node.cpp:362
+                                      # ✅ 정상 작동 중
       
-    # Data association
+      rotation_threshold: 0.2          # 새 키프레임 생성 최소 회전량 (라디안)
+                                      # 사용처: cone_slam_node.cpp:365
+                                      # ✅ 정상 작동 중
+      
+      time_threshold: 1.0              # 키프레임 간 최대 시간 간격 (초)
+                                      # ❌ 사용 안 됨 (파라미터 로드 안 됨)
+      
+    # ======================================
+    # 데이터 연관 (Data Association)
+    # 사용 파일: data_association.hpp
+    # ======================================
     association:
-      max_association_distance: 1.5    # Maximum distance for data association (reduced)
-      use_color_constraint: true       # Use cone color in association
-      color_mismatch_penalty: 10.0     # Penalty for color mismatch
+      max_association_distance: 1.5    # 데이터 연관 최대 거리 (미터)
+                                       # 사용처: data_association.hpp
+                                       # ⚠️ 주의: 코드 기본값 2.0으로 덮어씌워질 수 있음
+                                       # ⚠️ 중복: preprocessing.association_threshold와 유사한 역할
       
-    # Tentative landmark parameters (delayed addition)
+      use_color_constraint: true       # 연관 시 콘 색상 고려
+                                       # ❌ 사용 안 됨 (파라미터 로드 안 됨)
+      
+      color_mismatch_penalty: 10.0     # 색상 불일치 패널티
+                                       # ❌ 사용 안 됨 (파라미터 로드 안 됨)
+      
+    # ======================================
+    # 텐터티브 랜드마크 (Tentative Landmark)
+    # 사용 파일: tentative_landmark.hpp
+    # 잘못된 랜드마크 생성을 방지하기 위한 지연 추가 메커니즘
+    # ======================================
     tentative_landmark:
-      min_observations: 3              # Observations before promotion
-      min_time_span: 0.5              # Time span requirement
-      max_position_variance: 0.2       # Stricter variance requirement  
-      min_color_confidence: 0.8        # Higher color confidence
-      max_observations: 15             # Maximum observations to store
+      min_observations: 3              # 정식 랜드마크 승격 전 최소 관측 횟수
+                                       # 사용처: tentative_landmark.hpp
+                                       # ✅ 정상 작동 중
       
-    # Loop closure detection
+      min_time_span: 0.5              # 최소 관측 시간 간격 (초)
+                                       # 사용처: tentative_landmark.hpp
+                                       # ✅ 정상 작동 중
+      
+      max_position_variance: 0.2       # 최대 위치 분산 (제곱미터)
+                                       # 사용처: tentative_landmark.hpp
+                                       # ⚠️ 주의: 코드 기본값 0.5로 덮어씌워질 수 있음
+      
+      min_color_confidence: 0.8        # 최소 색상 신뢰도
+                                       # 사용처: tentative_landmark.hpp
+                                       # ⚠️ 주의: 코드 기본값 0.6으로 덮어씌워질 수 있음
+      
+      max_observations: 15             # 저장할 최대 관측 수
+                                       # 사용처: tentative_landmark.hpp
+                                       # ⚠️ 주의: 코드 기본값 20으로 덮어씌워질 수 있음
+      
+    # ======================================
+    # 루프 클로저 검출 (Loop Closure Detection)
+    # 사용 파일: loop_closure_detector.hpp
+    # ❌ 현재 전체 비활성화 상태
+    # ======================================
     loop_closure:
-      enable: false                    # Disable loop closure for now
-      min_keyframes_apart: 15          # Minimum keyframes between loop candidates (reduced)
-      max_distance_for_loop: 8.0       # Maximum distance to consider loop closure (increased)
-      min_matched_cones: 2             # Minimum matched cones for loop closure (further reduced)
-      min_cones_per_constellation: 2   # Minimum cones for constellation (minimum viable)
+      enable: false                    # 루프 클로저 비활성화
+                                       # ⚠️ cone_slam_node.cpp:166에서 하드코딩으로 false 설정
+      
+      # 아래 파라미터들은 모두 사용되지 않음 (루프 클로저 비활성화)
+      min_keyframes_apart: 15          # ❌ 사용 안 됨
+      max_distance_for_loop: 8.0       # ❌ 사용 안 됨
+      min_matched_cones: 2             # ❌ 사용 안 됨
+      min_cones_per_constellation: 2   # ❌ 사용 안 됨
       
       # Path segment parameters
-      path_segment_size: 20            # Number of poses to store per segment
-      curvature_threshold: 0.1         # Threshold for detecting turns (rad/m)
-      straight_threshold: 0.02         # Threshold for straight sections (rad/m)
+      path_segment_size: 20            # ❌ 사용 안 됨
+      curvature_threshold: 0.1         # ❌ 사용 안 됨
+      straight_threshold: 0.02         # ❌ 사용 안 됨
       
       # Geometric feature parameters
-      min_feature_length: 5.0          # Minimum length to detect a feature (meters)
-      turn_angle_threshold: 0.3        # Minimum angle change for turn (~17 degrees)
-      hairpin_angle_threshold: 1.57    # Angle for hairpin detection (90 degrees)
+      min_feature_length: 5.0          # ❌ 사용 안 됨
+      turn_angle_threshold: 0.3        # ❌ 사용 안 됨
+      hairpin_angle_threshold: 1.57    # ❌ 사용 안 됨
       
       # Matching weights
-      path_match_weight: 0.3           # Weight for path similarity (0-1)
-      geometric_feature_weight: 0.4    # Weight for geometric features (0-1)
+      path_match_weight: 0.3           # ❌ 사용 안 됨
+      geometric_feature_weight: 0.4    # ❌ 사용 안 됨
 
-    # Visualization
+    # ======================================
+    # 시각화 (Visualization)
+    # ❌ 경고: 이 섹션 전체가 로드되지 않음!
+    # ======================================
     visualization:
-      publish_rate: 10.0               # Hz
-      show_inter_landmark_factors: true # Visualize inter-landmark constraints
-      show_pattern_factors: true       # Visualize pattern-based constraints
-      factor_line_width: 0.02          # Width of factor visualization lines
+      publish_rate: 10.0               # ❌ 사용 안 됨 (하드코딩 100ms 타이머)
+      show_inter_landmark_factors: true # ❌ 사용 안 됨
+      show_pattern_factors: true       # ❌ 사용 안 됨
+      factor_line_width: 0.02          # ❌ 사용 안 됨
+
+    # ======================================
+    # Odometry 파라미터 (미정의)
+    # ⚠️ 경고: config에 없지만 코드에서 선언됨
+    # cone_slam_node.cpp:85-87에서 하드코딩
+    # ======================================
+    # odometry:
+    #   max_correspondence_distance: 3.0  # 코드 기본값
+    #   use_color_constraint: true        # 코드 기본값
+    #   min_correspondences: 3             # 코드 기본값
+
+# ======================================
+# 권장 수정사항:
+# 1. association_threshold 중복 제거 (1.0 vs 1.5)
+# 2. ISAM2 파라미터 로드 구현 필요
+# 3. 노이즈 모델 파라미터 실제 사용 필요
+# 4. visualization 파라미터 로드 구현 필요
+# 5. odometry 섹션 추가 필요
+# 6. 하드코딩된 기본값들 제거 필요
+# ======================================

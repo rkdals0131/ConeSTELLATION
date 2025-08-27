@@ -115,8 +115,11 @@ os_to_base_tf = tf_buffer_.lookupTransform("base_link", msg->header.frame_id, tf
 
 ## TF Transforms
 
-### Published by cone_slam_node: ✅
-- `map` -> `odom`: SLAM correction transform (drift correction)
+### Published by cone_slam_node: ❌ **현재 문제**
+- `map` -> `odom`: **현재 항상 identity transform 발행 (drift correction 비활성화됨)**
+  - **문제**: DriftCorrectionManager가 circular dependency로 인해 비활성화
+  - **결과**: 실제 drift correction이 작동하지 않음
+  - **수정 필요**: cone_slam_node.cpp의 lines 105-118, 338-342, 525-531
 
 ### Published by EKF fusion node: ✅
 - `odom` -> `base_link`: Fused odometry at 100Hz

@@ -90,6 +90,10 @@ public:
         std::chrono::milliseconds(100),
         std::bind(&ConeSLAMNode::visualization_callback, this));
     
+    // COMMENTED OUT: map->odom transform publishing to avoid conflicts
+    // Another EKF node is already publishing map->odom identity transform
+    // Focus on pure mapping functionality first
+    /*
     // Initialize map->odom transform as identity
     // This is needed even with drift correction disabled to complete the TF tree
     geometry_msgs::msg::TransformStamped map_to_odom;
@@ -116,9 +120,7 @@ public:
           tf.transform.rotation.w = 1.0;
           tf_broadcaster_.sendTransform(tf);
         });
-    
-    // REMOVED: base_link -> base_link_slam transform is unnecessary
-    // Only map -> base_link_slam is needed for debugging
+    */
     
     // Initialize path message header
     slam_path_.header.frame_id = "map";
