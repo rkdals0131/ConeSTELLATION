@@ -161,6 +161,14 @@ private:
         this->declare_parameter("mapping.max_landmark_distance", 10.0);
     mapping_config_.max_association_distance = 
         this->declare_parameter("association.max_association_distance", 2.0);
+    mapping_config_.enable_loop_closure =
+        this->declare_parameter("mapping.enable_loop_closure", true);
+    mapping_config_.loop_closure_translation_noise =
+        this->declare_parameter("mapping.loop_closure_translation_noise", 0.5);
+    mapping_config_.loop_closure_rotation_noise =
+        this->declare_parameter("mapping.loop_closure_rotation_noise", 0.3);
+    mapping_config_.loop_closure_recent_poses =
+        this->declare_parameter("mapping.loop_closure_recent_poses", 20);
     
     // Loop closure parameters (temporarily disabled)
     // TODO: Re-enable when loop closure is properly integrated
@@ -184,6 +192,10 @@ private:
         this->declare_parameter("keyframe.translation_threshold", 1.0);
     keyframe_rotation_threshold_ = 
         this->declare_parameter("keyframe.rotation_threshold", 0.2);
+
+    // TF publishing
+    publish_map_to_odom_ =
+        this->declare_parameter("tf.publish_map_to_odom", true);
   }
   
   void cone_callback(const custom_interface::msg::TrackedConeArray::SharedPtr msg) {
@@ -337,11 +349,10 @@ private:
         msg->pose.pose.orientation.y,
         msg->pose.pose.orientation.z));
     
-    // DISABLED: Drift correction temporarily disabled to fix circular dependency
-    // double timestamp = rclcpp::Time(msg->header.stamp).seconds();
-    // drift_manager_->add_odometry_pose(timestamp, T_odom_base);
-    // 
-    // RCLCPP_DEBUG(this->get_logger(), "Added odometry pose to drift manager at %.3f", timestamp);
+    double timestamp = rclcpp::Time(msg->header.stamp).seconds();
+    drift_manager_->add_odometry_pose(timestamp, T_odom_base);
+
+    RCLCPP_DEBUG(this->get_logger(), "Added odometry pose to drift manager at %.3f", timestamp);
   }
   
   bool should_create_keyframe(const Eigen::Isometry3d& current_pose) {
@@ -500,7 +511,7 @@ private:
           auto pose2d = values.at<gtsam::Pose2>(latest_pose_key);
           
           geometry_msgs::msg::PoseStamped pose_msg;
-          pose_msg.header.stamp = this->now();
+          pose_msg.header.stamp = viz_timestamp;
           pose_msg.header.frame_id = "map";
           pose_msg.pose.position.x = pose2d.x();
           pose_msg.pose.position.y = pose2d.y();
@@ -523,15 +534,13 @@ private:
           tf_msg.transform.rotation = pose_msg.pose.orientation;
           
           tf_broadcaster_.sendTransform(tf_msg);
-          
-          // DISABLED: Drift correction temporarily disabled to fix circular dependency
-          // Eigen::Isometry3d T_map_base = Eigen::Isometry3d::Identity();
-          // T_map_base.translation() = Eigen::Vector3d(pose2d.x(), pose2d.y(), 0.0);
-          // T_map_base.linear() = Eigen::AngleAxisd(pose2d.theta(), Eigen::Vector3d::UnitZ()).toRotationMatrix();
-          // 
-          // double current_time = this->now().seconds();
-          // drift_manager_->update_slam_pose(current_time, T_map_base);
-          
+
+          Eigen::Isometry3d T_map_base = Eigen::Isometry3d::Identity();
+          T_map_base.translation() = Eigen::Vector3d(pose2d.x(), pose2d.y(), 0.0);
+          T_map_base.linear() = Eigen::AngleAxisd(pose2d.theta(), Eigen::Vector3d::UnitZ()).toRotationMatrix();
+
+          drift_manager_->update_slam_pose(viz_timestamp.seconds(), T_map_base);
+
           RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                               "Current pose: x=%.2f, y=%.2f, theta=%.2f", 
                               pose2d.x(), pose2d.y(), pose2d.theta());
@@ -545,6 +554,22 @@ private:
     if (!slam_path_.poses.empty()) {
       slam_path_.header.stamp = viz_timestamp;
       slam_visualizer_->updatePath(slam_path_);
+    }
+
+    if (publish_map_to_odom_) {
+      const auto T_map_odom = drift_manager_->get_map_to_odom();
+      geometry_msgs::msg::TransformStamped map_odom_tf;
+      map_odom_tf.header.stamp = viz_timestamp;
+      map_odom_tf.header.frame_id = "map";
+      map_odom_tf.child_frame_id = "odom";
+      map_odom_tf.transform.translation.x = T_map_odom.translation().x();
+      map_odom_tf.transform.translation.y = T_map_odom.translation().y();
+      map_odom_tf.transform.translation.z = T_map_odom.translation().z();
+
+      Eigen::Quaterniond q(T_map_odom.rotation());
+      map_odom_tf.transform.rotation = tf2::toMsg(q);
+
+      tf_broadcaster_.sendTransform(map_odom_tf);
     }
     
     // Publish keyframes
@@ -598,6 +623,7 @@ private:
   // Parameters
   double keyframe_translation_threshold_;
   double keyframe_rotation_threshold_;
+  bool publish_map_to_odom_;
 };
 
 } // namespace cone_stellation

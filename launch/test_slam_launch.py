@@ -26,6 +26,7 @@ def launch_setup(context, *args, **kwargs):
         package='cone_stellation',
         executable='dummy_publisher_node.py',
         name='dummy_publisher',
+        remappings=[('/cone/for_sim', '/cone/fused/ukf')],
         parameters=[dummy_config],
         output='screen'
     )

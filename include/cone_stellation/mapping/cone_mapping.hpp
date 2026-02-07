@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <memory>
 #include <unordered_map>
 #include <set>
@@ -18,6 +19,7 @@
 #include "cone_stellation/common/tentative_landmark.hpp"
 #include "cone_stellation/factors/inter_landmark_factors.hpp"
 #include "cone_stellation/factors/cone_observation_factor.hpp"
+#include "cone_stellation/mapping/loop_closure_detector.hpp"
 
 namespace cone_stellation {
 
@@ -52,13 +54,21 @@ public:
     // Optimization triggers
     int optimize_every_n_frames;
     bool optimize_on_loop_closure;
+
+    // Loop closure settings
+    bool enable_loop_closure;
+    double loop_closure_translation_noise;
+    double loop_closure_rotation_noise;
+    int loop_closure_recent_poses;
     
     Config() : isam2_relinearize_threshold(0.1), isam2_relinearize_skip(10),
                odometry_noise(0.1), cone_observation_noise(0.5),
                inter_landmark_distance_noise(0.1), pattern_factor_noise(0.05),
                enable_inter_landmark_factors(true), min_covisibility_count(2),
                max_landmark_distance(10.0), max_association_distance(2.0),
-               optimize_every_n_frames(10), optimize_on_loop_closure(true) {}
+               optimize_every_n_frames(10), optimize_on_loop_closure(true),
+               enable_loop_closure(true), loop_closure_translation_noise(0.5),
+               loop_closure_rotation_noise(0.3), loop_closure_recent_poses(20) {}
   };
   
   ConeMapping(const Config& config = Config()) 
@@ -82,6 +92,10 @@ public:
     params.factorization = gtsam::ISAM2Params::QR;  // More stable than CHOLESKY
     params.findUnusedFactorSlots = true;   // Clean up unused factor slots
     isam2_ = std::make_shared<gtsam::ISAM2>(params);
+
+    if (config_.enable_loop_closure) {
+      loop_closure_detector_ = std::make_shared<LoopClosureDetector>();
+    }
   }
   
   /**
@@ -112,13 +126,43 @@ public:
                   "No cone observations in frame %d", frame->id);
     }
     
+    bool loop_closure_added = false;
+    if (config_.enable_loop_closure && loop_closure_detector_) {
+      auto candidates = loop_closure_detector_->detect_loop_closures(frame, landmarks_);
+      if (!candidates.empty()) {
+        const auto& best = candidates.front();
+        gtsam::Symbol query_key('x', best.query_frame_id);
+        gtsam::Symbol ref_key('x', best.reference_frame_id);
+
+        auto loop_noise = gtsam::noiseModel::Diagonal::Sigmas(
+            gtsam::Vector3(config_.loop_closure_translation_noise,
+                           config_.loop_closure_translation_noise,
+                           config_.loop_closure_rotation_noise));
+
+        new_factors_.emplace_shared<gtsam::BetweenFactor<gtsam::Pose2>>(
+            query_key, ref_key, best.relative_pose, loop_noise);
+
+        loop_closure_added = true;
+
+        RCLCPP_INFO(rclcpp::get_logger("cone_mapping"),
+                    "Loop closure added: query=%d ref=%d score=%.3f matches=%zu",
+                    best.query_frame_id, best.reference_frame_id,
+                    best.score, best.cone_matches.size());
+      }
+
+      auto recent_poses = get_recent_poses(config_.loop_closure_recent_poses);
+      loop_closure_detector_->add_keyframe(frame, landmarks_, recent_poses);
+    }
+
     // Store frame
     frames_[next_pose_id_] = frame;
     next_pose_id_++;
     
     // Optimize if needed
     frames_since_optimization_++;
-    if (frames_since_optimization_ >= config_.optimize_every_n_frames) {
+    if (loop_closure_added && config_.optimize_on_loop_closure) {
+      optimize();
+    } else if (frames_since_optimization_ >= config_.optimize_every_n_frames) {
       optimize();
     }
     
@@ -771,6 +815,25 @@ private:
   }
   
   Config config_;
+
+  std::vector<gtsam::Pose2> get_recent_poses(int max_count) const {
+    std::vector<gtsam::Pose2> poses;
+    if (max_count <= 0 || next_pose_id_ <= 0) {
+      return poses;
+    }
+
+    const int start_id = std::max(0, next_pose_id_ - max_count);
+    auto values = isam2_->calculateEstimate();
+
+    poses.reserve(next_pose_id_ - start_id);
+    for (int id = start_id; id < next_pose_id_; ++id) {
+      gtsam::Symbol pose_key('x', id);
+      if (values.exists(pose_key)) {
+        poses.push_back(values.at<gtsam::Pose2>(pose_key));
+      }
+    }
+    return poses;
+  }
   
   // GTSAM components
   std::shared_ptr<gtsam::ISAM2> isam2_;
@@ -790,6 +853,9 @@ private:
   
   // Track tentative to confirmed landmark mapping for current frame
   std::unordered_map<int, int> tentative_to_landmark_;
+
+  // Loop closure
+  LoopClosureDetector::Ptr loop_closure_detector_;
   
   // Inter-landmark factor duplicate prevention registry
   // Key: (min(id1, id2), max(id1, id2))
